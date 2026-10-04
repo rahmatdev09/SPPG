@@ -1,0 +1,62 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null && request.auth.token.email is string;
+    }
+
+    function accountPath() {
+      return /databases/$(database)/documents/app_users/$(request.auth.token.email);
+    }
+
+    function hasActiveAccount() {
+      return signedIn()
+        && exists(accountPath())
+        && get(accountPath()).data.active == true
+        && get(accountPath()).data.role in ['super_admin', 'admin_logistik'];
+    }
+
+    function isSuperAdmin() {
+      return hasActiveAccount() && get(accountPath()).data.role == 'super_admin';
+    }
+
+    function isLogisticsAdmin() {
+      return hasActiveAccount() && get(accountPath()).data.role == 'admin_logistik';
+    }
+
+    match /app_users/{email} {
+      allow get: if signedIn() && (email == request.auth.token.email || isSuperAdmin());
+      allow list: if isSuperAdmin();
+      allow create, update, delete: if isSuperAdmin() && email != request.auth.token.email;
+    }
+
+    match /mbg_items/{itemId} {
+      allow read, write: if hasActiveAccount();
+    }
+
+    match /suppliers/{supplierId} {
+      allow read, write: if hasActiveAccount();
+    }
+
+    match /menus/{menuId} {
+      allow read, write: if hasActiveAccount();
+    }
+
+    match /payment_letters/{letterId} {
+      allow read, write: if hasActiveAccount();
+    }
+
+    match /barang_arrival_photos/{photoId} {
+      allow read, write: if hasActiveAccount();
+    }
+
+    match /pms/{pmId} {
+      allow read: if hasActiveAccount();
+      allow write: if isSuperAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
