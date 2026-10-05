@@ -76,7 +76,10 @@ window.appState = {
 
 let deferredPrompt = null;
 let adminArrivalPhotoPreviewUrl = null;
-let sppAttachments = [];
+let sppProductPhotoLayouts = [];
+let sppInvoicePhotos = [];
+let sppProductPhotoLayout = 1;
+let sppEditingLetterId = "";
 const ADMIN_ARRIVAL_PAGE_SIZE = 10;
 let adminArrivalVisibleCount = ADMIN_ARRIVAL_PAGE_SIZE;
 let adminArrivalFilterKey = "";
@@ -203,6 +206,7 @@ function setupInstallPrompt() {
 window.showToast = function (msg, type = "info") {
   const container = document.getElementById("toastContainer");
   if (!container) return;
+  container.style.zIndex = "120";
 
   const toast = document.createElement("div");
   const bg =
@@ -273,6 +277,15 @@ function formatDocumentSize(value) {
 
 function showDriveApiError(error) {
   const message = String(error?.message || "");
+  const errorCode = String(error?.code || "");
+  if (errorCode === "auth/unauthorized-domain") {
+    showToast(`Domain ${location.hostname} belum diizinkan di Firebase Authentication. Tambahkan domain ini pada Authorized domains.`, "error");
+    return;
+  }
+  if (errorCode === "auth/popup-blocked") {
+    showToast("Popup login diblokir browser. Izinkan pop-up untuk situs ini lalu coba login lagi.", "error");
+    return;
+  }
   const setupNotice = document.getElementById("driveApiSetupNotice");
   const isApiDisabled =
     /has not been used|is disabled|SERVICE_DISABLED|accessNotConfigured/i.test(
@@ -2266,7 +2279,7 @@ function renderSppLetters(loadError = null) {
     const letterId = encodeURIComponent(String(letter.id));
     const total = Number(letter.total ?? (letter.suppliers || []).reduce((sum, row) => sum + Number(row.amount || 0), 0));
     const creator = letter.createdByName || letter.createdByEmail || "-";
-    return `<tr class="border-t border-slate-100 hover:bg-slate-50"><td class="whitespace-nowrap px-5 py-3.5">${escapeHtml(formatLetterDate(letter.date || "-"))}</td><td class="px-5 py-3.5 font-semibold text-slate-700">${escapeHtml(letter.number || "-")}</td><td class="max-w-xs px-5 py-3.5"><span class="line-clamp-2">${escapeHtml(letter.category || "-")}</span></td><td class="whitespace-nowrap px-5 py-3.5 text-right font-bold text-slate-700">${formatRupiah(total)}</td><td class="px-5 py-3.5">${escapeHtml(creator)}</td><td class="whitespace-nowrap px-5 py-3.5 text-right"><button type="button" onclick="openSavedSppLetter(decodeURIComponent('${letterId}'))" class="rounded-lg bg-sky-50 px-2.5 py-2 font-semibold text-sky-700" title="Buka surat"><i class="fa-regular fa-eye"></i></button><button type="button" onclick="deleteSavedSppLetter(decodeURIComponent('${letterId}'))" class="ml-1 rounded-lg bg-rose-50 px-2.5 py-2 font-semibold text-rose-600" title="Hapus surat"><i class="fa-solid fa-trash-can"></i></button></td></tr>`;
+    return `<tr class="border-t border-slate-100 hover:bg-slate-50"><td class="whitespace-nowrap px-5 py-3.5">${escapeHtml(formatLetterDate(letter.date || "-"))}</td><td class="px-5 py-3.5 font-semibold text-slate-700">${escapeHtml(letter.number || "-")}</td><td class="max-w-xs px-5 py-3.5"><span class="line-clamp-2">${escapeHtml(letter.category || "-")}</span></td><td class="whitespace-nowrap px-5 py-3.5 text-right font-bold text-slate-700">${formatRupiah(total)}</td><td class="px-5 py-3.5">${escapeHtml(creator)}</td><td class="whitespace-nowrap px-5 py-3.5 text-right"><button type="button" onclick="openSavedSppLetter(decodeURIComponent('${letterId}'))" class="rounded-lg bg-sky-50 px-2.5 py-2 font-semibold text-sky-700" title="Buka surat"><i class="fa-regular fa-eye"></i></button><button type="button" onclick="editSavedSppLetter(decodeURIComponent('${letterId}'))" class="ml-1 rounded-lg bg-amber-50 px-2.5 py-2 font-semibold text-amber-700" title="Edit surat"><i class="fa-solid fa-pen-to-square"></i></button><button type="button" onclick="deleteSavedSppLetter(decodeURIComponent('${letterId}'))" class="ml-1 rounded-lg bg-rose-50 px-2.5 py-2 font-semibold text-rose-600" title="Hapus surat"><i class="fa-solid fa-trash-can"></i></button></td></tr>`;
   }).join("");
 }
 
@@ -2383,8 +2396,9 @@ window.addSppSupplierRow = function (initial = {}) {
   if (!tbody) return;
   const row = document.createElement("tr");
   row.className = "border-t border-slate-100";
-  row.innerHTML = '<td class="p-2"><input class="spp-item-date mb-1 w-full rounded-lg border border-slate-200 px-2 py-2" type="date" aria-label="Tanggal barang" onchange="refreshSppDatabaseOptions(this)"/><button type="button" class="spp-add-all-date mb-1 w-full rounded-lg bg-sky-50 px-2 py-2 text-[10px] font-bold text-sky-700" onclick="addAllSppItemsForDate(this)"><i class="fa-solid fa-list-check mr-1"></i>Tambah semua barang tanggal ini</button><select class="spp-item-select mb-1 w-full rounded-lg border border-slate-200 px-2 py-2" onchange="selectSppDatabaseItem(this)"><option value="">Pilih tanggal barang terlebih dahulu</option></select><input class="spp-item-name w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[10px]" maxlength="140" placeholder="Nama barang" readonly/></td><td class="p-2"><input class="spp-item-quantity w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2" type="number" min="0" step="any" placeholder="Qty" readonly/><small class="spp-item-unit-label ml-1 text-slate-500"></small><input class="spp-item-unit hidden" type="text"/></td><td class="p-2"><input class="spp-item-price w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2" type="number" min="0" step="any" placeholder="Harga" readonly/></td><td class="p-2"><input class="spp-item-amount w-full rounded-lg border border-slate-200 bg-sky-50 px-2 py-2 font-bold" type="number" min="0" step="any" placeholder="Total" readonly/></td><td class="p-2"><input class="spp-item-account w-full rounded-lg border border-slate-200 px-2 py-2" maxlength="80" placeholder="Otomatis dari supplier"/></td><td class="p-2"><input class="spp-item-bank w-full rounded-lg border border-slate-200 px-2 py-2" maxlength="100" placeholder="Otomatis dari supplier"/></td><td class="p-2"><select class="spp-item-supplier-select mb-1 w-full rounded-lg border border-slate-200 px-2 py-2" onchange="selectSppDatabaseSupplier(this)"><option value="">Memuat supplier dari database...</option></select><input class="spp-item-supplier w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[10px]" maxlength="140" placeholder="Nama supplier" readonly/></td><td class="p-2"><button type="button" class="spp-remove-row rounded-lg bg-rose-50 px-2 py-2 text-rose-600" aria-label="Hapus baris"><i class="fa-solid fa-trash-can"></i></button></td>';
-  row.querySelector(".spp-item-date").value = initial.itemDate || document.getElementById("sppLetterDate")?.value || "";
+  row.innerHTML = '<td class="p-2"><input class="spp-item-date hidden" type="hidden"/><input class="spp-item-date-picker mb-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-[10px]" type="date" aria-label="Tanggal barang" onchange="setSppItemDate(this)"/><select class="spp-item-select mb-1 w-full rounded-lg border border-slate-200 px-2 py-2" onchange="selectSppDatabaseItem(this)"><option value="">Pilih tanggal barang terlebih dahulu</option></select><input class="spp-item-name w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[10px]" maxlength="140" placeholder="Nama barang" readonly/></td><td class="p-2"><input class="spp-item-quantity w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2" type="number" min="0" step="any" placeholder="Qty" readonly/><small class="spp-item-unit-label ml-1 text-slate-500"></small><input class="spp-item-unit hidden" type="text"/></td><td class="p-2"><input class="spp-item-price w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2" type="number" min="0" step="any" placeholder="Harga" readonly/></td><td class="p-2"><input class="spp-item-amount w-full rounded-lg border border-slate-200 bg-sky-50 px-2 py-2 font-bold" type="number" min="0" step="any" placeholder="Total" readonly/></td><td class="p-2"><input class="spp-item-account w-full rounded-lg border border-slate-200 px-2 py-2" maxlength="80" placeholder="Otomatis dari supplier"/></td><td class="p-2"><input class="spp-item-bank w-full rounded-lg border border-slate-200 px-2 py-2" maxlength="100" placeholder="Otomatis dari supplier"/></td><td class="p-2"><select class="spp-item-supplier-select mb-1 w-full rounded-lg border border-slate-200 px-2 py-2" onchange="selectSppDatabaseSupplier(this)"><option value="">Memuat supplier dari database...</option></select><input class="spp-item-supplier w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[10px]" maxlength="140" placeholder="Nama supplier" readonly/></td><td class="p-2"><button type="button" class="spp-remove-row rounded-lg bg-rose-50 px-2 py-2 text-rose-600" aria-label="Hapus baris"><i class="fa-solid fa-trash-can"></i></button></td>';
+  row.querySelector(".spp-item-date").value = initial.itemDate || document.getElementById("sppBulkItemDate")?.value || document.getElementById("sppLetterDate")?.value || getLocalDateString();
+  row.querySelector(".spp-item-date-picker").value = row.querySelector(".spp-item-date").value;
   row.querySelector(".spp-item-name").value = initial.itemName || "";
   row.querySelector(".spp-item-amount").value = initial.amount || "";
   row.querySelector(".spp-item-account").value = initial.accountNumber || "";
@@ -2400,13 +2414,60 @@ window.addSppSupplierRow = function (initial = {}) {
   });
   tbody.appendChild(row);
   window.refreshSppDatabaseOptions(row);
+  const itemSelect = row.querySelector(".spp-item-select");
+  if (initial.itemId && itemSelect) {
+    if (![...itemSelect.options].some((option) => option.value === String(initial.itemId))) {
+      itemSelect.add(new Option(`${initial.itemName || "Barang tersimpan"} · ${initial.unit || ""}`, String(initial.itemId)));
+    }
+    itemSelect.value = String(initial.itemId);
+    window.selectSppDatabaseItem(itemSelect);
+    row.querySelector(".spp-item-name").value = initial.itemName || "";
+    row.querySelector(".spp-item-quantity").value = initial.quantity ?? "";
+    row.querySelector(".spp-item-unit").value = initial.unit || "";
+    row.querySelector(".spp-item-unit-label").textContent = initial.unit || "";
+    row.querySelector(".spp-item-price").value = initial.unitPrice ?? "";
+    row.querySelector(".spp-item-amount").value = initial.amount ?? "";
+  }
+  const supplierSelect = row.querySelector(".spp-item-supplier-select");
+  if (initial.supplierId && supplierSelect) {
+    if (![...supplierSelect.options].some((option) => option.value === String(initial.supplierId))) {
+      supplierSelect.add(new Option(initial.supplierName || "Supplier tersimpan", String(initial.supplierId)));
+    }
+    supplierSelect.value = String(initial.supplierId);
+    window.selectSppDatabaseSupplier(supplierSelect);
+  }
+  row.querySelector(".spp-item-account").value = initial.accountNumber || "";
+  row.querySelector(".spp-item-bank").value = initial.bankName || "";
+  row.querySelector(".spp-item-supplier").value = initial.supplierName || "";
   window.updateSppPaymentTotal();
   return row;
 };
 
+window.setSppItemDate = function (input) {
+  const row = input.closest("tr");
+  const dateInput = row?.querySelector(".spp-item-date");
+  if (dateInput) dateInput.value = input.value;
+  const itemSelect = row?.querySelector(".spp-item-select");
+  if (itemSelect) {
+    itemSelect.value = "";
+    window.refreshSppDatabaseOptions(row);
+  }
+  const name = row?.querySelector(".spp-item-name");
+  const quantity = row?.querySelector(".spp-item-quantity");
+  const price = row?.querySelector(".spp-item-price");
+  const amount = row?.querySelector(".spp-item-amount");
+  const unit = row?.querySelector(".spp-item-unit-label");
+  if (name) name.value = "";
+  if (quantity) quantity.value = "";
+  if (price) price.value = "";
+  if (amount) amount.value = "";
+  if (unit) unit.textContent = "";
+  window.updateSppPaymentTotal();
+};
+
 window.addAllSppItemsForDate = function (button) {
   const sourceRow = button.closest("tr");
-  const date = sourceRow?.querySelector(".spp-item-date")?.value || "";
+  const date = document.getElementById("sppBulkItemDate")?.value || sourceRow?.querySelector(".spp-item-date")?.value || "";
   if (!date) return showToast("Pilih tanggal barang terlebih dahulu", "error");
   if (!window.appState.barangLoaded) return showToast("Data barang masih dimuat", "info");
   const items = (window.appState.barang || []).filter((item) => String(item.tanggal || "") === date);
@@ -2420,13 +2481,15 @@ window.addAllSppItemsForDate = function (button) {
   const pendingItems = items.filter((item) => !alreadyAdded.has(String(item.id)));
   if (!pendingItems.length) return showToast("Semua barang pada tanggal ini sudah ditambahkan", "info");
 
-  let reusableRow = sourceRow;
-  if (reusableRow.querySelector(".spp-item-select")?.value || reusableRow.querySelector(".spp-item-supplier-select")?.value) reusableRow = null;
+  let reusableRow = existingRows.find((row) => !row.querySelector(".spp-item-select")?.value && !row.querySelector(".spp-item-supplier-select")?.value) || null;
+  if (reusableRow && (reusableRow.querySelector(".spp-item-select")?.value || reusableRow.querySelector(".spp-item-supplier-select")?.value)) reusableRow = null;
   pendingItems.forEach((item) => {
     const row = reusableRow || window.addSppSupplierRow({ itemDate: date });
     reusableRow = null;
     const dateInput = row.querySelector(".spp-item-date");
     if (dateInput) dateInput.value = date;
+    const datePicker = row.querySelector(".spp-item-date-picker");
+    if (datePicker) datePicker.value = date;
     window.refreshSppDatabaseOptions(row);
     const itemSelect = row.querySelector(".spp-item-select");
     if (itemSelect) {
@@ -2445,30 +2508,118 @@ window.updateSppPaymentTotal = function () {
   return amount;
 };
 
-window.prepareSppAttachments = async function (event) {
-  const files = [...(event.target.files || [])];
-  const status = document.getElementById("sppPhotoStatus");
-  const preview = document.getElementById("sppPhotoPreviews");
-  sppAttachments = [];
-  if (files.length > 8) {
-    event.target.value = "";
-    if (status) status.textContent = "Maksimal 8 foto lampiran.";
-    return showToast("Foto lampiran maksimal 8 file", "error");
+function normalizeSppAttachments(attachments) {
+  const makeSheets = (photos, layout, allowShortLast = false) => {
+    const sheets = [];
+    for (let start = 0; start < photos.length; start += layout) {
+      const pagePhotos = photos.slice(start, start + layout);
+      sheets.push({ layout: allowShortLast ? pagePhotos.length : layout, photos: pagePhotos });
+    }
+    return sheets;
+  };
+  if (Array.isArray(attachments)) return { productLayouts: makeSheets(attachments, 1), invoicePhotos: [] };
+  const oldPhotos = Array.isArray(attachments?.productPhotos) ? attachments.productPhotos : [];
+  const productLayouts = Array.isArray(attachments?.productLayouts)
+    ? attachments.productLayouts.flatMap((group) => makeSheets(
+      Array.isArray(group?.photos) ? group.photos : [],
+      Math.min(6, Math.max(1, Number(group?.layout) || 1)),
+    ))
+    : makeSheets(oldPhotos, Math.min(6, Math.max(1, Number(attachments?.productPhotoLayout) || 1)), true);
+  return {
+    productLayouts,
+    invoicePhotos: Array.isArray(attachments?.invoicePhotos) ? attachments.invoicePhotos : [],
+  };
+}
+
+function renderSppAttachmentPreviews() {
+  const productPreview = document.getElementById("sppProductPhotoPreviews");
+  const productStatus = document.getElementById("sppProductPhotoStatus");
+  if (productPreview) productPreview.innerHTML = sppProductPhotoLayouts.map((group, groupIndex) => `<section class="col-span-full rounded-lg border border-sky-100 bg-sky-50/50 p-2"><div class="mb-2 flex items-center justify-between gap-2"><span class="text-[10px] font-bold text-sky-800">Lembar ${groupIndex + 1} · layout ${group.layout} foto · ${group.photos.length}/${group.layout}</span><button type="button" onclick="removeSppProductLayout(${groupIndex})" class="text-[10px] font-semibold text-rose-600">Hapus lembar</button></div><div class="grid grid-cols-2 gap-2 sm:grid-cols-3">${group.photos.map((photo, photoIndex) => `<figure class="relative overflow-hidden rounded-lg border border-slate-200 bg-white"><img src="${escapeHtml(photo.dataUrl || "")}" alt="${escapeHtml(photo.name || "Lampiran")}" class="h-24 w-full object-cover"><figcaption class="truncate p-1.5 pr-7 text-[9px] text-slate-500">${escapeHtml(photo.name || "Lampiran")}</figcaption><button type="button" onclick="removeSppAttachment('product', ${groupIndex}, ${photoIndex})" aria-label="Hapus ${escapeHtml(photo.name || "foto")}" class="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-white/95 text-rose-600 shadow"><i class="fa-solid fa-xmark"></i></button></figure>`).join("")}</div></section>`).join("");
+  const productCount = sppProductPhotoLayouts.reduce((sum, group) => sum + group.photos.length, 0);
+  if (productStatus) productStatus.textContent = sppProductPhotoLayouts.length ? `${sppProductPhotoLayouts.length} lembar foto barang (${productCount} foto).` : "Belum ada lembar foto barang.";
+  const renderGroup = (photos, kind, previewId, statusId) => {
+    const preview = document.getElementById(previewId);
+    const status = document.getElementById(statusId);
+    if (preview) preview.innerHTML = photos.map((photo, index) => `<figure class="relative overflow-hidden rounded-lg border border-slate-200"><img src="${escapeHtml(photo.dataUrl || "")}" alt="${escapeHtml(photo.name || "Lampiran")}" class="h-24 w-full object-cover"><figcaption class="truncate p-1.5 pr-7 text-[9px] text-slate-500">${escapeHtml(photo.name || "Lampiran")}</figcaption><button type="button" onclick="removeSppAttachment('${kind}', ${index})" aria-label="Hapus ${escapeHtml(photo.name || "foto")}" class="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-white/95 text-rose-600 shadow"><i class="fa-solid fa-xmark"></i></button></figure>`).join("");
+    if (status) status.textContent = photos.length ? `${photos.length} foto nota · ${photos.length} halaman.` : "Belum ada foto nota.";
+  };
+  renderGroup(sppInvoicePhotos, "invoice", "sppInvoicePhotoPreviews", "sppInvoicePhotoStatus");
+}
+
+window.setSppProductPhotoLayout = function (value) {
+  sppProductPhotoLayout = Math.min(6, Math.max(1, Number(value) || 1));
+};
+
+window.addSppProductPhotoLayout = function () {
+  const layout = Math.min(6, Math.max(1, Number(document.getElementById("sppProductPhotoLayout")?.value) || 1));
+  sppProductPhotoLayout = layout;
+  const incomplete = sppProductPhotoLayouts.find((group) => group.photos.length < group.layout);
+  if (incomplete) {
+    showToast(`Lengkapi lembar layout ${incomplete.layout} terlebih dahulu (${incomplete.photos.length}/${incomplete.layout} foto)`, "info");
+    document.getElementById("sppProductPhotoFiles")?.click();
+    return;
   }
-  if (status) status.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Mengompres lampiran...';
-  if (preview) preview.innerHTML = "";
+  sppProductPhotoLayouts.push({ layout, photos: [] });
+  renderSppAttachmentPreviews();
+  document.getElementById("sppProductPhotoFiles")?.click();
+};
+
+window.removeSppProductLayout = function (layoutIndex) {
+  sppProductPhotoLayouts.splice(layoutIndex, 1);
+  renderSppAttachmentPreviews();
+};
+
+window.removeSppAttachment = function (kind, groupIndex, photoIndex) {
+  if (kind === "invoice") sppInvoicePhotos.splice(groupIndex, 1);
+  else {
+    const group = sppProductPhotoLayouts[groupIndex];
+    group?.photos.splice(photoIndex, 1);
+    if (group && !group.photos.length) sppProductPhotoLayouts.splice(groupIndex, 1);
+  }
+  renderSppAttachmentPreviews();
+};
+
+window.clearSppAttachments = function (kind) {
+  if (kind === "invoice") sppInvoicePhotos = [];
+  else sppProductPhotoLayouts = [];
+  renderSppAttachmentPreviews();
+};
+
+window.prepareSppAttachments = async function (event, kind = "product") {
+  const files = [...(event.target.files || [])];
+  const targetGroup = kind === "invoice" ? null : sppProductPhotoLayouts.find((group) => group.photos.length < group.layout);
+  const photos = kind === "invoice" ? sppInvoicePhotos : targetGroup?.photos;
+  const status = document.getElementById(kind === "invoice" ? "sppInvoicePhotoStatus" : "sppProductPhotoStatus");
+  if (kind === "product" && !targetGroup) {
+    event.target.value = "";
+    if (status) status.textContent = "Tambahkan lembar dan pilih layout terlebih dahulu.";
+    return showToast("Klik Tambah lembar foto lalu pilih layout 1–6", "info");
+  }
+  if (files.some((file) => !["image/jpeg", "image/png", "image/webp"].includes(file.type))) {
+    event.target.value = "";
+    if (status) status.textContent = "Format foto harus JPG, PNG, atau WebP.";
+    return showToast("Pilih foto dengan format JPG, PNG, atau WebP", "error");
+  }
+  const maxCount = kind === "product" ? targetGroup.layout - photos.length : 8 - photos.length;
+  if (files.length > maxCount) {
+    event.target.value = "";
+    if (status) status.textContent = kind === "product" ? `Layout lembar ini maksimal ${targetGroup.layout} foto.` : "Maksimal 8 foto nota.";
+    return showToast(kind === "product" ? `Pilih maksimal ${maxCount} foto lagi untuk layout ${targetGroup.layout}` : "Maksimal 8 foto nota", "error");
+  }
+  if (status) status.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Mengompres foto...';
   try {
+    const compressedPhotos = [];
     for (const file of files) {
       const compressed = await compressArrivalPhoto(file);
-      sppAttachments.push({ name: file.name, dataUrl: compressed.dataUrl });
+      compressedPhotos.push({ name: file.name, dataUrl: compressed.dataUrl });
     }
-    if (preview) preview.innerHTML = sppAttachments.map((photo) => `<figure class="overflow-hidden rounded-lg border border-slate-200"><img src="${photo.dataUrl}" alt="${escapeHtml(photo.name)}" class="h-24 w-full object-cover"><figcaption class="truncate p-1.5 text-[9px] text-slate-500">${escapeHtml(photo.name)}</figcaption></figure>`).join("");
-    if (status) status.textContent = sppAttachments.length ? `${sppAttachments.length} foto siap dilampirkan.` : "Tidak ada foto dipilih.";
+    photos.push(...compressedPhotos);
+    renderSppAttachmentPreviews();
   } catch (error) {
-    sppAttachments = [];
-    event.target.value = "";
     if (status) status.textContent = error.message || "Foto lampiran gagal diproses.";
     showToast(error.message || "Foto lampiran gagal diproses", "error");
+  } finally {
+    event.target.value = "";
   }
 };
 
@@ -2483,17 +2634,51 @@ function showSppPreview(data, isSample = false) {
   const total = data.suppliers.reduce((sum, supplier) => sum + Number(supplier.amount || 0), 0);
   const supplierRows = data.suppliers.map((supplier, index) => `<tr><td class="center">${index + 1}</td><td>${safe(supplier.itemName)}</td><td class="number">${Number(supplier.quantity || 0).toLocaleString("id-ID")}</td><td class="center">${safe(supplier.unit)}</td><td class="number">Rp ${Number(supplier.unitPrice || 0).toLocaleString("id-ID")}</td><td class="number">Rp ${Number(supplier.amount || 0).toLocaleString("id-ID")}</td><td>${safe(supplier.accountNumber)}</td><td>${safe(supplier.bankName)}</td><td>${safe(supplier.supplierName)}</td></tr>`).join("");
   const totalRow = `<tr class="sumrow"><td colspan="5" class="center"><b>JUMLAH</b></td><td class="number"><b>Rp ${total.toLocaleString("id-ID")}</b></td><td colspan="3"></td></tr>`;
-  const attachments = data.attachments || [];
-  const attachmentsHtml = attachments.length
-    ? attachments.map((photo) => `<figure><img src="${safe(photo.dataUrl)}" alt="${safe(photo.name)}"><figcaption>${safe(photo.name)}</figcaption></figure>`).join("")
-    : `<p class="empty-attachments">${isSample ? "Contoh lampiran foto barang dan nota akan ditampilkan di halaman ini." : "Tidak ada foto barang atau nota yang dilampirkan."}</p>`;
+  const attachments = normalizeSppAttachments(data.attachments);
+  const productCollages = attachments.productLayouts.map((group, index) => `<article class="product-collage"><h3>FOTO BARANG · LAYOUT ${index + 1} (${group.layout} FOTO)</h3><div class="product-photo-grid layout-${group.layout}">${group.photos.map((photo) => `<figure><img src="${safe(photo.dataUrl)}" alt="${safe(photo.name)}"><figcaption>${safe(photo.name)}</figcaption></figure>`).join("")}</div></article>`);
+  const productPhotoSheets = [];
+  for (let start = 0; start < productCollages.length; start += 2) {
+    productPhotoSheets.push(`<section class="attachment-sheet product-sheet"><div class="product-collage-stack">${productCollages.slice(start, start + 2).join("")}</div></section>`);
+  }
+  const invoicePhotoSheets = attachments.invoicePhotos.map((photo, index) => `<section class="attachment-sheet invoice-sheet"><h3>FOTO NOTA · LEMBAR ${index + 1}/${attachments.invoicePhotos.length}</h3><figure><img src="${safe(photo.dataUrl)}" alt="${safe(photo.name)}"><figcaption>${safe(photo.name)}</figcaption></figure></section>`);
+  const hasAttachments = productPhotoSheets.length + invoicePhotoSheets.length > 0;
+  const attachmentsHtml = hasAttachments
+    ? [...productPhotoSheets, ...invoicePhotoSheets].join("")
+    : `<p class="empty-attachments">${isSample ? "Contoh lampiran foto barang dan foto nota akan ditampilkan di halaman ini." : "Tidak ada foto barang atau foto nota yang dilampirkan."}</p>`;
   const purpose = safe(data.purpose).replace(/\r?\n/g, "<br>");
   const recipientAddress = safe(data.recipientAddress).replace(/\r?\n/g, "<br>");
   const place = safe(settings.kitchenAddress || kitchen);
-  const html = `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:0;background:#e8edf2;color:#111;font:10px/1.45 Arial,sans-serif}.page{position:relative;width:210mm;min-height:297mm;margin:16px auto;padding:18mm 19mm;background:#fff;box-shadow:0 4px 20px #0002}.page-two{page-break-before:always}.kop{display:flex;align-items:center;justify-content:center;gap:12px;text-align:center;border-bottom:3px double #111;padding:0 0 9px}.logo{width:62px;height:62px;object-fit:contain;flex:none}.koptext{flex:1}.foundation{font-size:12px;font-weight:bold;text-transform:uppercase}.kitchen{font-size:12px;font-weight:bold;text-transform:uppercase;margin-top:2px}.address,.contact{font-size:9px}.doc-title{text-align:center;font-weight:bold;margin:10px 0 14px;font-size:11px}.letter-number{margin:-8px 0 9px;text-align:center;font-size:9px}.properties{margin:0 0 2px}.recipient{margin:0 0 12px}.intro{margin:0 0 8px;text-align:justify}.summary-title{margin:10px auto 0;width:68%;border:1px solid #111;background:#dbe7f8;text-align:center;font-weight:bold;padding:3px}.summary-subtitle{margin:0 auto;width:68%;border:1px solid #111;border-top:0;background:#dbe7f8;text-align:center;font-weight:bold;padding:3px}.summary-date{margin:0 auto 8px;width:68%;border:1px solid #111;border-top:0;background:#dbe7f8;text-align:center;padding:3px}table{width:100%;border-collapse:collapse;font-size:8px;table-layout:fixed}th,td{border:1px solid #111;padding:5px 4px;overflow-wrap:anywhere;vertical-align:middle}th{background:#c9ddf2;text-align:center;font-weight:bold}.number{text-align:right;white-space:nowrap}.center{text-align:center}.sumrow td{background:#dbe7f8}.closing{margin:12px 0 0;text-align:justify}.date{text-align:right;margin:8px 0}.signature-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:center;margin-top:12px;font-size:9px}.signature{min-height:86px}.signature .gap{height:42px}.sign-name{font-weight:bold;text-decoration:underline}.head-sign{text-align:center;margin:4px auto 0;width:50%;font-size:9px}.head-sign .gap{height:44px}.page-heading{text-align:center;font-weight:bold;font-size:11px;margin:0 0 14px}.attachments{display:grid;grid-template-columns:1fr 1fr;gap:10px}.attachments figure{margin:0;break-inside:avoid;border:1px solid #aaa;padding:5px}.attachments img{width:100%;height:105mm;object-fit:contain}.attachments figcaption{font-size:9px;text-align:center;margin-top:4px;overflow-wrap:anywhere}.empty-attachments{text-align:center;margin-top:30px;color:#666}.sample{position:absolute;right:19mm;top:6mm;font-size:8px;color:#94a3b8}@page{size:A4;margin:0}@media print{body{background:#fff}.page{width:210mm;min-height:297mm;margin:0;padding:18mm 19mm;box-shadow:none;page-break-after:always}.page:last-child{page-break-after:auto}.page-two.empty{display:none}.sample{display:none}}</style></head><body><main class="page">${isSample ? '<span class="sample">CONTOH TEMPLATE</span>' : ""}<header class="kop">${logoUrl ? `<img class="logo" src="${safe(logoUrl)}" alt="Logo">` : ""}<div class="koptext"><div class="foundation">${foundation}</div><div class="kitchen">${kitchen}</div><div class="address">${address}</div>${phone ? `<div class="contact">Telp. ${phone}</div>` : ""}</div></header><div class="doc-title">SURAT PERMINTAAN PEMBAYARAN</div><div class="letter-number">Nomor: ${safe(data.number)}</div><div class="properties">Sifat : ${safe(data.urgency)}<br>Perihal : ${safe(data.category)}</div><div class="recipient">Kepada Yth.<br><b>${safe(data.recipient)}</b>${recipientAddress ? `<br>${recipientAddress}` : ""}<br>Di Tempat</div><p class="intro">Sehubungan dengan pelaksanaan kegiatan Makan Bergizi Gratis tanggal ${safe(formatLetterDate(data.date))} di SPPG ${kitchen}, ${address}, maka kami mengajukan permintaan pembayaran dana belanja (kategori: ${safe(data.category)}). Biaya kepada pihak supplier sebagaimana rincian berikut:</p><div class="summary-title">REKAP BIAYA ${safe(data.category).toLocaleUpperCase("id-ID")}</div><div class="summary-subtitle">${kitchen.toLocaleUpperCase("id-ID")}</div><div class="summary-date">TANGGAL (${safe(formatLetterDate(data.date))})</div><table><thead><tr><th style="width:5%">NO</th><th style="width:18%">NAMA BARANG</th><th style="width:8%">QTY</th><th style="width:8%">SATUAN</th><th style="width:12%">HARGA SATUAN</th><th style="width:14%">TOTAL</th><th style="width:14%">NOMOR REKENING</th><th style="width:8%">NAMA BANK</th><th style="width:13%">NAMA SUPPLIER</th></tr></thead><tbody>${supplierRows}${totalRow}</tbody></table><p class="intro">Total pembayaran sebesar <b>Rp ${total.toLocaleString("id-ID")}</b> (<i>${safe(terbilangRupiah(total))}</i>). ${purpose}</p><p class="closing">Demikian surat permintaan pembayaran ini kami buat dan ajukan untuk digunakan sebagaimana mestinya. Atas perhatiannya kami ucapkan terima kasih.</p><p class="date">${place}, ${safe(formatLetterDate(data.date))}</p><div class="signature-grid"><div class="signature">Mengetahui,<br>PIC SPPG ${kitchen}<div class="gap"></div><div class="sign-name">${safe(data.picName)}</div></div><div class="signature">Akuntan SPPG ${kitchen}<div class="gap"></div><div class="sign-name">${safe(data.accountantName)}</div></div></div><div class="head-sign">Kepala SPPG ${kitchen}<div class="gap"></div><div class="sign-name">${safe(data.headName)}</div></div></main><section class="page page-two${attachments.length ? "" : " empty"}"><h2 class="page-heading">LAMPIRAN FOTO BARANG DAN NOTA</h2><div class="attachments">${attachmentsHtml}</div></section></body></html>`;
+  const html = `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:0;background:#e8edf2;color:#111;font:10px/1.45 Arial,sans-serif}.page{position:relative;width:210mm;min-height:297mm;margin:16px auto;padding:18mm 19mm;background:#fff;box-shadow:0 4px 20px #0002}.page-two{page-break-before:always}.kop{display:flex;align-items:center;justify-content:center;gap:12px;text-align:center;border-bottom:3px double #111;padding:0 0 9px}.logo{width:62px;height:62px;object-fit:contain;flex:none}.koptext{flex:1}.foundation{font-size:12px;font-weight:bold;text-transform:uppercase}.kitchen{font-size:12px;font-weight:bold;text-transform:uppercase;margin-top:2px}.address,.contact{font-size:9px}.doc-title{text-align:center;font-weight:bold;margin:10px 0 14px;font-size:11px}.letter-number{margin:-8px 0 9px;text-align:center;font-size:9px}.properties{margin:0 0 2px}.recipient{margin:0 0 12px}.intro{margin:0 0 8px;text-align:justify}.summary-title{margin:10px auto 0;width:68%;border:1px solid #111;background:#dbe7f8;text-align:center;font-weight:bold;padding:3px}.summary-subtitle{margin:0 auto;width:68%;border:1px solid #111;border-top:0;background:#dbe7f8;text-align:center;font-weight:bold;padding:3px}.summary-date{margin:0 auto 8px;width:68%;border:1px solid #111;border-top:0;background:#dbe7f8;text-align:center;padding:3px}table{width:100%;border-collapse:collapse;font-size:8px;table-layout:fixed}th,td{border:1px solid #111;padding:5px 4px;overflow-wrap:anywhere;vertical-align:middle}th{background:#c9ddf2;text-align:center;font-weight:bold}.number{text-align:right;white-space:nowrap}.center{text-align:center}.sumrow td{background:#dbe7f8}.closing{margin:12px 0 0;text-align:justify}.date{text-align:right;margin:8px 0}.signature-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:center;margin-top:12px;font-size:9px}.signature{min-height:86px}.signature .gap{height:42px}.sign-name{font-weight:bold;text-decoration:underline}.head-sign{text-align:center;margin:4px auto 0;width:50%;font-size:9px}.head-sign .gap{height:44px}.page-heading{text-align:center;font-weight:bold;font-size:11px;margin:0 0 14px}.attachments{display:block}.attachment-sheet{break-inside:avoid;page-break-inside:avoid;min-height:238mm;padding:3mm 0}.attachment-sheet+.attachment-sheet{break-before:page;page-break-before:always}.attachment-sheet h3{text-align:center;font-size:11px;margin:0 0 8mm}.product-photo-grid{display:grid;gap:6mm;align-content:start}.product-photo-grid.layout-1,.product-photo-grid.layout-2{grid-template-columns:1fr}.product-photo-grid.layout-3,.product-photo-grid.layout-4{grid-template-columns:repeat(2,minmax(0,1fr))}.product-photo-grid.layout-5,.product-photo-grid.layout-6{grid-template-columns:repeat(3,minmax(0,1fr))}.product-photo-grid figure,.invoice-sheet figure{min-width:0;margin:0;border:1px solid #cbd5e1;padding:3mm;break-inside:avoid}.product-photo-grid img{display:block;width:100%;object-fit:contain}.product-photo-grid.layout-1 img{height:215mm}.product-photo-grid.layout-2 img{height:103mm}.product-photo-grid.layout-3 img,.product-photo-grid.layout-4 img{height:96mm}.product-photo-grid.layout-5 img,.product-photo-grid.layout-6 img{height:74mm}.invoice-sheet figure{height:232mm;display:flex;flex-direction:column;align-items:center;justify-content:center}.invoice-sheet img{display:block;width:100%;height:218mm;object-fit:contain}.attachment-sheet figcaption{margin-top:2mm;text-align:center;font-size:9px;overflow-wrap:anywhere}.empty-attachments{text-align:center;margin-top:30px;color:#666}.sample{position:absolute;right:19mm;top:6mm;font-size:8px;color:#94a3b8}@page{size:A4;margin:0}@media print{body{background:#fff}.page{width:210mm;min-height:297mm;margin:0;padding:18mm 19mm;box-shadow:none;page-break-after:always}.page:last-child{page-break-after:auto}.page-two.empty{display:none}.sample{display:none}}</style></head><body><main class="page">${isSample ? '<span class="sample">CONTOH TEMPLATE</span>' : ""}<header class="kop">${logoUrl ? `<img class="logo" src="${safe(logoUrl)}" alt="Logo">` : ""}<div class="koptext"><div class="foundation">${foundation}</div><div class="kitchen">${kitchen}</div><div class="address">${address}</div>${phone ? `<div class="contact">Telp. ${phone}</div>` : ""}</div></header><div class="doc-title">SURAT PERMINTAAN PEMBAYARAN</div><div class="letter-number">Nomor: ${safe(data.number)}</div><div class="properties">Sifat : ${safe(data.urgency)}<br>Perihal : ${safe(data.category)}</div><div class="recipient">Kepada Yth.<br><b>${safe(data.recipient)}</b>${recipientAddress ? `<br>${recipientAddress}` : ""}<br>Di Tempat</div><p class="intro">Sehubungan dengan pelaksanaan kegiatan Makan Bergizi Gratis tanggal ${safe(formatLetterDate(data.date))} di SPPG ${kitchen}, ${address}, maka kami mengajukan permintaan pembayaran dana belanja (kategori: ${safe(data.category)}). Biaya kepada pihak supplier sebagaimana rincian berikut:</p><div class="summary-title">REKAP BIAYA ${safe(data.category).toLocaleUpperCase("id-ID")}</div><div class="summary-subtitle">${kitchen.toLocaleUpperCase("id-ID")}</div><div class="summary-date">TANGGAL (${safe(formatLetterDate(data.date))})</div><table><thead><tr><th style="width:5%">NO</th><th style="width:18%">NAMA BARANG</th><th style="width:8%">QTY</th><th style="width:8%">SATUAN</th><th style="width:12%">HARGA SATUAN</th><th style="width:14%">TOTAL</th><th style="width:14%">NOMOR REKENING</th><th style="width:8%">NAMA BANK</th><th style="width:13%">NAMA SUPPLIER</th></tr></thead><tbody>${supplierRows}${totalRow}</tbody></table><p class="intro">Total pembayaran sebesar <b>Rp ${total.toLocaleString("id-ID")}</b> (<i>${safe(terbilangRupiah(total))}</i>). ${purpose}</p><p class="closing">Demikian surat permintaan pembayaran ini kami buat dan ajukan untuk digunakan sebagaimana mestinya. Atas perhatiannya kami ucapkan terima kasih.</p><p class="date">${place}, ${safe(formatLetterDate(data.date))}</p><div class="signature-grid"><div class="signature">Mengetahui,<br>PIC SPPG ${kitchen}<div class="gap"></div><div class="sign-name">${safe(data.picName)}</div></div><div class="signature">Akuntan SPPG ${kitchen}<div class="gap"></div><div class="sign-name">${safe(data.accountantName)}</div></div></div><div class="head-sign">Kepala SPPG ${kitchen}<div class="gap"></div><div class="sign-name">${safe(data.headName)}</div></div></main><section class="page page-two${hasAttachments ? "" : " empty"}"><div class="attachments">${attachmentsHtml}</div></section></body></html>`;
   const frame = document.getElementById("sppPreviewFrame");
   if (!frame) return;
-  frame.srcdoc = html;
+  frame.srcdoc = html.replace("</head>", `<style>
+    .summary-title,.summary-subtitle,.summary-date{width:100%;margin-left:0;margin-right:0}
+    .attachment-sheet{height:auto;min-height:0;padding:0;overflow:visible;display:block;break-inside:avoid;page-break-inside:avoid}
+    .attachment-sheet h3{margin:0 0 2mm;font-size:8px;line-height:1}
+    .product-sheet{height:250mm;display:flex;align-items:center;justify-content:center;overflow:hidden}
+    .product-collage-stack{width:100%;height:216mm;display:grid;grid-template-rows:repeat(2,108mm);align-content:center;justify-items:center;gap:0}
+    .product-collage{width:100%;height:108mm;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;overflow:hidden}
+    .product-collage h3{height:5mm;margin:0;font-size:8px;line-height:1}
+    .product-photo-grid{width:120mm;height:auto;max-width:100%;gap:0;grid-auto-flow:row;align-content:start;margin:0 auto}
+    .product-photo-grid.layout-1{width:70mm;grid-template-columns:1fr;grid-template-rows:1fr}
+    .product-photo-grid.layout-2{width:120mm;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:1fr}
+    .product-photo-grid.layout-3,.product-photo-grid.layout-4{width:120mm;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr))}
+    .product-photo-grid.layout-5,.product-photo-grid.layout-6{width:120mm;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr))}
+    .product-photo-grid figure{width:100%;height:55mm;min-height:0;padding:0;border:0;border-radius:0;margin:0;overflow:hidden;line-height:0}
+    .product-photo-grid.layout-1 figure{height:70mm}
+    .product-photo-grid.layout-2 figure{height:55mm}
+    .product-photo-grid.layout-3 figure,.product-photo-grid.layout-4 figure{height:48mm}
+    .product-photo-grid.layout-5 figure,.product-photo-grid.layout-6 figure{height:42mm}
+    .product-photo-grid img{display:block;width:100%;height:100%;object-fit:cover}
+    .product-photo-grid.layout-1 img,.product-photo-grid.layout-2 img,.product-photo-grid.layout-3 img,.product-photo-grid.layout-4 img,.product-photo-grid.layout-5 img,.product-photo-grid.layout-6 img{height:100%}
+    .product-photo-grid figcaption{display:none}
+    .invoice-sheet{height:250mm;display:flex;flex-direction:column;align-items:center;justify-content:center}
+    .invoice-sheet h3{margin:0 0 3mm;font-size:8px}
+    .invoice-sheet figure{width:85mm;height:75mm;margin:0;border:0;padding:0;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden}
+    .invoice-sheet img{width:100%;height:68mm;max-width:85mm;object-fit:contain}
+    .invoice-sheet figcaption{margin-top:1mm;font-size:7px;line-height:1.1;max-width:100%;overflow-wrap:anywhere}
+    @media print{.attachment-sheet+.attachment-sheet{break-before:page;page-break-before:always}}
+  </style></head>`);
   document.getElementById("sppPreviewTitle").textContent = isSample ? "Contoh Template Surat Permintaan Pembayaran" : "Pratinjau Surat Permintaan Pembayaran";
   document.getElementById("sppPreviewModal").classList.remove("hidden");
   document.getElementById("sppPreviewModal").classList.add("flex");
@@ -2502,13 +2687,23 @@ function showSppPreview(data, isSample = false) {
 window.openSppForm = function () {
   const form = document.querySelector("#sppFormModal form");
   form?.reset();
-  sppAttachments = [];
-  document.getElementById("sppPhotoPreviews").innerHTML = "";
-  document.getElementById("sppPhotoStatus").textContent = "Opsional Â· pilih foto barang dan nota yang akan tampil di halaman lampiran.";
+  sppEditingLetterId = "";
+  document.getElementById("sppLetterId").value = "";
+  document.getElementById("sppFormTitle").textContent = "Buat Surat Permintaan Pembayaran";
+  const submitButton = form?.querySelector("button[type='submit']");
+  if (submitButton) submitButton.innerHTML = '<i class="fa-solid fa-eye mr-1"></i>Simpan &amp; Pratinjau';
+  sppProductPhotoLayouts = [];
+  sppInvoicePhotos = [];
+  sppProductPhotoLayout = 1;
+  document.getElementById("sppProductPhotoLayout").value = "1";
+  document.getElementById("sppProductPhotoFiles").value = "";
+  document.getElementById("sppInvoicePhotoFiles").value = "";
+  renderSppAttachmentPreviews();
   document.getElementById("sppSupplierRows").innerHTML = "";
-  window.addSppSupplierRow();
   const today = getLocalDateString();
   document.getElementById("sppLetterDate").value = today;
+  document.getElementById("sppBulkItemDate").value = today;
+  window.addSppSupplierRow();
   document.querySelectorAll("#sppSupplierRows .spp-item-date").forEach((input) => {
     if (!input.value) input.value = today;
   });
@@ -2518,6 +2713,41 @@ window.openSppForm = function () {
   const modal = document.getElementById("sppFormModal");
   modal.classList.remove("hidden");
   modal.classList.add("flex");
+};
+
+window.editSavedSppLetter = function (letterId) {
+  const letter = (window.appState.sppLetters || []).find((entry) => String(entry.id) === String(letterId));
+  if (!letter) return showToast("Surat tidak ditemukan", "error");
+
+  window.openSppForm();
+  sppEditingLetterId = String(letter.id);
+  document.getElementById("sppLetterId").value = sppEditingLetterId;
+  document.getElementById("sppFormTitle").textContent = "Edit Surat Permintaan Pembayaran";
+  const submitButton = document.querySelector("#sppFormModal form button[type='submit']");
+  if (submitButton) submitButton.innerHTML = '<i class="fa-solid fa-floppy-disk mr-1"></i>Simpan Perubahan &amp; Pratinjau';
+
+  document.getElementById("sppLetterNumber").value = letter.number || "";
+  document.getElementById("sppLetterDate").value = letter.date || "";
+  document.getElementById("sppUrgency").value = letter.urgency || "Segera";
+  document.getElementById("sppRecipient").value = letter.recipient || "";
+  document.getElementById("sppRecipientAddress").value = letter.recipientAddress || "";
+  document.getElementById("sppCategory").value = letter.category || "";
+  document.getElementById("sppPurpose").value = letter.purpose || "";
+  document.getElementById("sppBulkItemDate").value = letter.suppliers?.[0]?.itemDate || letter.date || getLocalDateString();
+
+  document.getElementById("sppSupplierRows").innerHTML = "";
+  const suppliers = Array.isArray(letter.suppliers) ? letter.suppliers : [];
+  (suppliers.length ? suppliers : [{}]).forEach((supplier) => {
+    window.addSppSupplierRow({ ...supplier, itemDate: supplier.itemDate || letter.date || "" });
+  });
+
+  const savedAttachments = normalizeSppAttachments(letter.attachments);
+  sppProductPhotoLayouts = savedAttachments.productLayouts.map((group) => ({ layout: group.layout, photos: [...group.photos] }));
+  sppInvoicePhotos = [...savedAttachments.invoicePhotos];
+  sppProductPhotoLayout = sppProductPhotoLayouts.at(-1)?.layout || 1;
+  document.getElementById("sppProductPhotoLayout").value = String(sppProductPhotoLayout);
+  renderSppAttachmentPreviews();
+  window.updateSppPaymentTotal();
 };
 
 window.closeSppForm = function () {
@@ -2552,7 +2782,7 @@ window.previewSppTemplate = function () {
       { itemName: "Beras", quantity: 120, unit: "Kg", unitPrice: 20000, amount: 2400000, accountNumber: "1234567890", bankName: "BRI", supplierName: "Toko Pangan Sejahtera" },
       { itemName: "Telur Ayam", quantity: 90, unit: "Kg", unitPrice: 15000, amount: 1350000, accountNumber: "0987654321", bankName: "BSI", supplierName: "UD Sumber Rezeki" },
     ],
-    attachments: [],
+    attachments: { productLayouts: [], invoicePhotos: [] },
     picName: "Nama PIC SPPG",
     accountantName: "Nama Akuntan",
     headName: "Nama Kepala SPPG",
@@ -2583,7 +2813,10 @@ window.generateSppLetter = function (event) {
       supplierId: row.querySelector(".spp-item-supplier-select").value,
       supplierName: row.querySelector(".spp-item-supplier").value.trim(),
     })).filter((row) => row.itemId || row.itemName || row.amount || row.accountNumber || row.bankName || row.supplierId || row.supplierName),
-    attachments: [...sppAttachments],
+    attachments: {
+      productLayouts: sppProductPhotoLayouts.map((group) => ({ layout: group.layout, photos: [...group.photos] })),
+      invoicePhotos: [...sppInvoicePhotos],
+    },
     picName: String(savedSettings.sppPicName || "").trim(),
     accountantName: String(savedSettings.sppAccountantName || "").trim(),
     headName: String(savedSettings.sppHeadName || "").trim(),
@@ -2600,26 +2833,43 @@ window.generateSppLetter = function (event) {
   const invalidRow = data.suppliers.some((row) => !row.itemDate || !row.itemId || !row.itemName || row.quantity <= 0 || row.unitPrice <= 0 || row.amount !== row.quantity * row.unitPrice || !row.supplierId || !row.accountNumber || !row.bankName || !row.supplierName);
   if (invalidRow) return showToast("Pilih barang sesuai tanggal, isi jumlah pembayaran, dan pilih supplier pada setiap baris", "error");
   if (!data.suppliers.some((row) => row.amount > 0)) return showToast("Jumlah pembayaran harus lebih dari nol", "error");
-  if (data.attachments.reduce((sum, photo) => sum + String(photo.dataUrl || "").length, 0) > 780 * 1024) {
-    return showToast("Total ukuran foto lampiran terlalu besar untuk disimpan. Kurangi jumlah foto lalu coba lagi.", "error");
+  const incompleteLayout = data.attachments.productLayouts.find((group) => group.photos.length !== group.layout);
+  if (incompleteLayout) return showToast(`Layout foto barang ${incompleteLayout.layout} harus berisi tepat ${incompleteLayout.layout} foto sebelum disimpan`, "error");
+  const allAttachments = [...data.attachments.productLayouts.flatMap((group) => group.photos), ...data.attachments.invoicePhotos];
+  if (allAttachments.reduce((sum, photo) => sum + String(photo.dataUrl || "").length, 0) > 780 * 1024) {
+    return showToast("Total ukuran foto barang dan nota terlalu besar untuk disimpan. Kurangi jumlah atau ukuran fotonya.", "error");
   }
   const submitButton = document.querySelector("#sppFormModal form button[type='submit']");
-  setButtonLoading(submitButton, true, "Menyimpan surat...");
+  setButtonLoading(submitButton, true, sppEditingLetterId ? "Menyimpan perubahan..." : "Menyimpan surat...");
   const total = data.suppliers.reduce((sum, supplier) => sum + Number(supplier.amount || 0), 0);
   const now = new Date().toISOString();
+  const existingLetter = sppEditingLetterId
+    ? (window.appState.sppLetters || []).find((letter) => String(letter.id) === sppEditingLetterId)
+    : null;
+  const letterRef = sppEditingLetterId
+    ? doc(db, "payment_letters", sppEditingLetterId)
+    : doc(collection(db, "payment_letters"));
   const savedLetter = {
     ...data,
     type: "surat_permintaan_pembayaran",
     total,
-    createdAt: now,
-    createdByEmail: window.appState.user?.email || "",
-    createdByName: window.appState.user?.displayName || window.appState.user?.email || "",
+    createdAt: existingLetter?.createdAt || now,
+    updatedAt: now,
+    createdByEmail: existingLetter?.createdByEmail || window.appState.user?.email || "",
+    createdByName: existingLetter?.createdByName || window.appState.user?.displayName || window.appState.user?.email || "",
   };
-  setDoc(doc(collection(db, "payment_letters")), savedLetter)
+  setDoc(letterRef, savedLetter)
     .then(() => {
+      savedLetter.id = letterRef.id;
+      const nextLetters = new Map((window.appState.sppLetters || []).map((letter) => [String(letter.id), letter]));
+      nextLetters.set(String(letterRef.id), savedLetter);
+      window.appState.sppLetters = [...nextLetters.values()];
+      window.appState.sppLettersLoaded = true;
+      renderSppLetters();
+      sppEditingLetterId = "";
       closeSppForm();
       showSppPreview(savedLetter);
-      showToast("Surat berhasil disimpan dan masuk ke tabel riwayat", "success");
+      showToast(existingLetter ? "Perubahan surat berhasil disimpan" : "Surat berhasil disimpan dan masuk ke tabel riwayat", "success");
     })
     .catch((error) => showToast(error.message || "Surat gagal disimpan ke Firebase", "error"))
     .finally(() => setButtonLoading(submitButton, false));

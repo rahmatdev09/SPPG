@@ -1,4 +1,4 @@
-const CACHE_NAME = "mbg-pwa-v29-wider-payment-modal";
+const CACHE_NAME = "mbg-pwa-v38-rab-summary-width";
 const APP_SHELL = [
   "./",
   "./index.html",
