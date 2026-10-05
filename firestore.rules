@@ -34,6 +34,15 @@ service cloud.firestore {
       allow read, write: if hasActiveAccount();
     }
 
+    match /inventory_items/{itemId} {
+      allow read, write: if hasActiveAccount();
+    }
+
+    match /app_metadata/{metadataId} {
+      allow get: if hasActiveAccount();
+      allow create, update: if hasActiveAccount();
+    }
+
     match /suppliers/{supplierId} {
       allow read, write: if hasActiveAccount();
     }

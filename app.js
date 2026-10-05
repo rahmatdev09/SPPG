@@ -7,6 +7,7 @@ import {
   setDoc,
   deleteDoc,
   getDoc,
+  writeBatch,
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import {
   getAuth,
@@ -39,6 +40,8 @@ const legacyDummyBarangIds = new Set(["b1", "b2", "b3", "b4"]);
 
 window.appState = {
   barang: [],
+  inventoryItems: [],
+  inventoryLoaded: false,
   suppliers: [],
   suppliersLoaded: false,
   menus: [],
@@ -962,6 +965,7 @@ window.submitUploadDokumen = async function (event) {
 
 function setupFirestoreListeners() {
   window.appState.barangLoaded = false;
+  window.appState.inventoryLoaded = false;
   window.appState.suppliersLoaded = false;
   window.appState.pmsLoaded = false;
   window.appState.menusLoaded = false;
@@ -986,6 +990,7 @@ function setupFirestoreListeners() {
       });
       window.appState.barang = items;
       window.appState.barangLoaded = true;
+      ensureInventorySeededFromPlanningItems(items);
       window.refreshSppDatabaseOptions?.();
       renderBarangTable();
       renderStockTable();
@@ -1028,6 +1033,21 @@ function setupFirestoreListeners() {
       updateDashboardMetrics();
     },
   );
+
+  onSnapshot(collection(db, "inventory_items"), (snapshot) => {
+    window.appState.inventoryItems = snapshot.docs.map((itemDoc) => ({ id: itemDoc.id, ...itemDoc.data() }));
+    window.appState.inventoryLoaded = true;
+    renderStockTable();
+    renderAdminPwaStock();
+    renderAdminPwaDashboard();
+  }, (error) => {
+    console.warn("Inventory listener warning:", error);
+    window.appState.inventoryItems = [];
+    window.appState.inventoryLoaded = true;
+    renderStockTable();
+    renderAdminPwaStock();
+    renderAdminPwaDashboard();
+  });
 
   onSnapshot(
     collection(db, "menus"),
@@ -1080,6 +1100,74 @@ function setupFirestoreListeners() {
       updateDashboardMetrics();
     },
   );
+}
+
+async function ensureInventorySeededFromPlanningItems(items) {
+  const migrationRef = doc(db, "app_metadata", "inventory_seed_v1");
+  try {
+    const migration = await getDoc(migrationRef);
+    if (migration.exists()) return;
+    const groupedItems = new Map();
+    items.filter((item) => Number(item.datang || 0) > 0 || (Array.isArray(item.stockHistory) && item.stockHistory.length > 0)).forEach((item) => {
+      const key = `${String(item.nama || item.name || "Barang").trim().toLocaleLowerCase("id-ID")}::${String(item.satuan || "unit").trim().toLocaleLowerCase("id-ID")}`;
+      groupedItems.set(key, [...(groupedItems.get(key) || []), item]);
+    });
+    for (const group of groupedItems.values()) {
+      const first = group[0];
+      const inventoryId = getInventoryDocumentId(first.nama || first.name || "Barang", first.satuan || "unit");
+      const inventoryRef = doc(db, "inventory_items", inventoryId);
+      const existing = await getDoc(inventoryRef);
+      if (existing.exists()) continue;
+      const sourceEvents = group.flatMap((item) => {
+        const history = Array.isArray(item.stockHistory) ? [...item.stockHistory] : [];
+        if (!history.length) return [];
+        history.sort((a, b) => String(a.createdAt || a.date || "").localeCompare(String(b.createdAt || b.date || "")));
+        const firstEntry = history[0];
+        const inferredOpening = firstEntry.stockBefore != null
+          ? Number(firstEntry.stockBefore)
+          : firstEntry.type === "masuk"
+            ? Number(firstEntry.stockAfter || 0) - Number(firstEntry.quantity || 0)
+            : firstEntry.type === "keluar"
+              ? Number(firstEntry.stockAfter || 0) + Number(firstEntry.quantity || 0)
+              : Number(firstEntry.stockAfter || 0) - Number(firstEntry.difference || 0);
+        return history.map((entry, index) => ({ ...entry, _sourceOpening: index === 0 ? inferredOpening : 0 }));
+      }).sort((a, b) => String(a.createdAt || a.date || "").localeCompare(String(b.createdAt || b.date || "")));
+      let balance = group.reduce((sum, item) => sum + (Array.isArray(item.stockHistory) && item.stockHistory.length ? 0 : Number(item.datang || 0)), 0)
+        + sourceEvents.reduce((sum, entry) => sum + Number(entry._sourceOpening || 0), 0);
+      const stockHistory = [];
+      for (const sourceEvent of sourceEvents) {
+        const { _sourceOpening, ...entry } = sourceEvent;
+        const before = balance;
+        const delta = entry.type === "masuk"
+          ? Number(entry.quantity || 0)
+          : entry.type === "keluar"
+            ? -Number(entry.quantity || 0)
+            : Number(entry.difference || 0);
+        balance += delta;
+        stockHistory.push({ ...entry, stockBefore: before, stockAfter: balance, ...(entry.type === "opname" ? { physicalStock: balance } : {}) });
+      }
+      const currentBalance = group.reduce((sum, item) => sum + Number(item.datang || 0), 0);
+      if (!stockHistory.length && currentBalance > 0) {
+        const date = getLocalDateString();
+        stockHistory.push({ type: "masuk", quantity: currentBalance, stockBefore: 0, stockAfter: currentBalance, date, note: "Saldo awal hasil pemisahan stok", createdAt: new Date().toISOString() });
+      } else if (Math.abs(balance - currentBalance) > 0.000001) {
+        const difference = currentBalance - balance;
+        const date = getLocalDateString();
+        stockHistory.push({ type: "opname", quantity: Math.abs(difference), difference, physicalStock: currentBalance, stockBefore: balance, stockAfter: currentBalance, date, note: "Penyesuaian saldo saat pemisahan data stok", createdAt: new Date().toISOString() });
+      }
+      await setDoc(inventoryRef, {
+        nama: first.nama || first.name || "Barang",
+        tipe: first.tipe || "Umum",
+        satuan: first.satuan || "unit",
+        datang: currentBalance,
+        stockHistory,
+        sourcePlanningItemIds: group.map((item) => String(item.id)),
+      });
+    }
+    await setDoc(migrationRef, { complete: true, completedAt: new Date().toISOString() });
+  } catch (error) {
+    console.warn("Initial stock catalog copy failed:", error);
+  }
 }
 
 auth.onAuthStateChanged((user) => {
@@ -1410,7 +1498,7 @@ function renderCharts() {
       (b.nama || b.name || "").substring(0, 10),
     );
     const kebutuhanData = window.appState.barang.map((b) => b.kebutuhan || 0);
-    const datangData = window.appState.barang.map((b) => b.datang || 0);
+    const datangData = window.appState.barang.map(getItemReceivedQuantity);
 
     window.appState.dashboardChart = new Chart(ctx1, {
       type: "bar",
@@ -1576,7 +1664,7 @@ function renderBarangTable() {
           <td class="py-3 px-5 font-bold text-slate-800">${formatRupiah(item.harga)}</td>
           <td class="py-3 px-5 text-center font-medium">
             <span class="text-slate-800 font-bold">${item.kebutuhan || 0} ${item.satuan || ""}</span> / 
-            <span class="text-emerald-600 font-bold">${item.datang || 0} ${item.satuan || ""}</span>
+            <span class="text-emerald-600 font-bold">${getItemReceivedQuantity(item)} ${item.satuan || ""}</span>
           </td>
           <td class="py-3 px-5 text-center">
             <span class="px-2.5 py-1 rounded-full text-[10px] font-bold ${item.tipe === "Utama" ? "bg-sky-100 text-sky-700" : "bg-purple-100 text-purple-700"}">${item.tipe || "Utama"}</span>
@@ -1607,6 +1695,22 @@ function getLatestArrival(item) {
   return [...history].sort((a, b) =>
     String(b.recordedAt || b.receivedAt || "").localeCompare(String(a.recordedAt || a.receivedAt || "")),
   )[0] || null;
+}
+
+function getItemReceivedQuantity(item) {
+  const arrivals = Array.isArray(item?.arrivalHistory) ? item.arrivalHistory : [];
+  return arrivals.length
+    ? arrivals.reduce((sum, arrival) => sum + Number(arrival.quantity || 0), 0)
+    : Number(item?.datang || 0);
+}
+
+function getInventoryDocumentId(name, unit) {
+  const normalized = `${String(name || "").trim().toLocaleLowerCase("id-ID")}::${String(unit || "").trim().toLocaleLowerCase("id-ID")}`;
+  let hash = 2166136261;
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash = Math.imul(hash ^ normalized.charCodeAt(index), 16777619);
+  }
+  return `stock_${(hash >>> 0).toString(36)}`;
 }
 
 async function loadLatestArrivalPhotos(items) {
@@ -1716,7 +1820,7 @@ function renderAdminArrivalPage() {
     const latestDetail = latest
       ? `<p class="mt-1 text-[11px] text-slate-500">Terakhir: ${Number(latest.quantity || 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")} Â· ${escapeHtml(latestLabel)}</p>${latest.photoId ? `<button type="button" onclick="viewAdminArrivalPhoto('${escapeHtml(latest.photoId)}')" class="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700"><i class="fa-regular fa-image"></i>Lihat foto terakhir</button>` : ""}`
       : `<p class="mt-1 text-[11px] text-slate-500">${escapeHtml(latestLabel)}</p>`;
-    return `<article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><div class="flex items-start justify-between gap-3"><div class="min-w-0"><div class="flex flex-wrap items-center gap-2"><h3 class="font-bold text-slate-800">${escapeHtml(item.nama || item.name || "Barang")}</h3><span class="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-bold text-amber-700">Pending</span></div><p class="mt-1 text-xs text-slate-500">${escapeHtml(item.tipe || "Utama")} Â· ${escapeHtml(item.satuan || "unit")}</p><p class="mt-3 text-sm font-bold text-slate-700">Total datang: ${Number(item.datang || 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</p>${latestDetail}</div><i class="fa-solid fa-boxes-stacked mt-1 text-xl text-sky-600"></i></div><button type="button" onclick="openAdminArrival('${itemId}')" class="mt-4 w-full rounded-xl bg-sky-700 px-4 py-3 text-sm font-bold text-white hover:bg-sky-800"><i class="fa-solid fa-camera mr-2"></i>Catat barang datang</button></article>`;
+    return `<article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><div class="flex items-start justify-between gap-3"><div class="min-w-0"><div class="flex flex-wrap items-center gap-2"><h3 class="font-bold text-slate-800">${escapeHtml(item.nama || item.name || "Barang")}</h3><span class="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-bold text-amber-700">Pending</span></div><p class="mt-1 text-xs text-slate-500">${escapeHtml(item.tipe || "Utama")} Â· ${escapeHtml(item.satuan || "unit")}</p><p class="mt-3 text-sm font-bold text-slate-700">Total datang: ${getItemReceivedQuantity(item).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</p>${latestDetail}</div><i class="fa-solid fa-boxes-stacked mt-1 text-xl text-sky-600"></i></div><button type="button" onclick="openAdminArrival('${itemId}')" class="mt-4 w-full rounded-xl bg-sky-700 px-4 py-3 text-sm font-bold text-white hover:bg-sky-800"><i class="fa-solid fa-camera mr-2"></i>Catat barang datang</button></article>`;
   }).join("");
   const hasMore = visibleItems.length < filteredItems.length;
   list.innerHTML = `${cards}${hasMore ? `<div id="adminArrivalScrollSentinel" class="py-4 text-center text-xs text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Gulir untuk memuat barang berikutnya</div>` : `<p class="py-3 text-center text-[10px] text-slate-400">Semua barang sudah ditampilkan</p>`}`;
@@ -1766,11 +1870,12 @@ function renderAdminPwaDashboard() {
   const items = window.appState.barang;
   const today = getLocalDateString();
   const arrivals = items.flatMap((item) => (Array.isArray(item.arrivalHistory) ? item.arrivalHistory : []).map((entry) => ({ item, entry })));
+  const inventoryItems = window.appState.inventoryItems || [];
   const values = {
     adminDashTotalBarang: items.length,
     adminDashPending: items.filter((item) => (item.statusAdmin || "Pending") === "Pending").length,
     adminDashArrivalsToday: arrivals.filter(({ entry }) => String(entry.receivedDate || "") === today).length,
-    adminDashStockAvailable: items.filter((item) => Number(item.datang || 0) > 0).length,
+    adminDashStockAvailable: inventoryItems.filter((item) => Number(item.datang || 0) > 0).length,
   };
   Object.entries(values).forEach(([id, value]) => {
     const element = document.getElementById(id);
@@ -1789,12 +1894,12 @@ function renderAdminPwaDashboard() {
 window.renderAdminPwaStock = function () {
   const list = document.getElementById("adminPwaStockList");
   if (!list) return;
-  if (!window.appState.barangLoaded) {
+  if (!window.appState.inventoryLoaded) {
     list.innerHTML = '<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-sky-700"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Memuat stok...</div>';
     return;
   }
   const query = (document.getElementById("adminPwaStockSearch")?.value || "").trim().toLocaleLowerCase("id-ID");
-  const items = [...window.appState.barang].filter((item) => (item.nama || item.name || "").toLocaleLowerCase("id-ID").includes(query)).sort((a, b) => String(a.nama || a.name || "").localeCompare(String(b.nama || b.name || ""), "id"));
+  const items = [...window.appState.inventoryItems].filter((item) => (item.nama || item.name || "").toLocaleLowerCase("id-ID").includes(query)).sort((a, b) => String(a.nama || a.name || "").localeCompare(String(b.nama || b.name || ""), "id"));
   list.innerHTML = items.length ? items.map((item) => {
     const stock = Number(item.datang || 0);
     const state = stock > 0 ? "Tersedia" : "Kosong";
@@ -1806,25 +1911,25 @@ window.renderAdminPwaStock = function () {
 window.renderAdminPwaStock = function () {
   const list = document.getElementById("adminPwaStockList");
   if (!list) return;
-  if (!window.appState.barangLoaded) {
+  if (!window.appState.inventoryLoaded) {
     list.innerHTML = '<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-sky-700"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Memuat stok...</div>';
     return;
   }
   const query = (document.getElementById("adminPwaStockSearch")?.value || "").trim().toLocaleLowerCase("id-ID");
-  const items = [...window.appState.barang].filter((item) => (item.nama || item.name || "").toLocaleLowerCase("id-ID").includes(query)).sort((a, b) => String(a.nama || a.name || "").localeCompare(String(b.nama || b.name || ""), "id"));
+  const items = [...window.appState.inventoryItems].filter((item) => (item.nama || item.name || "").toLocaleLowerCase("id-ID").includes(query)).sort((a, b) => String(a.nama || a.name || "").localeCompare(String(b.nama || b.name || ""), "id"));
   list.innerHTML = items.length ? items.map((item) => {
     const stock = Number(item.datang || 0);
     const state = stock > 0 ? "Tersedia" : "Kosong";
     const color = stock > 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700";
     const safeId = encodeURIComponent(String(item.id));
-    return `<article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div class="flex items-center justify-between gap-3"><div class="min-w-0"><h3 class="truncate text-sm font-bold text-slate-800">${escapeHtml(item.nama || item.name || "Barang")}</h3><p class="mt-1 text-[11px] text-slate-500">${escapeHtml(item.tipe || "Umum")} Â· Kebutuhan ${Number(item.kebutuhan || 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</p></div><div class="shrink-0 text-right"><strong class="block text-sm text-slate-800">${stock.toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</strong><span class="mt-1 inline-flex rounded-full px-2 py-1 text-[9px] font-bold ${color}">${state}</span></div></div><button type="button" onclick="openStockUpdate(decodeURIComponent('${safeId}'))" class="mt-3 w-full rounded-xl bg-sky-50 px-3 py-2.5 text-xs font-bold text-sky-700 hover:bg-sky-100"><i class="fa-solid fa-pen-to-square mr-1"></i>Update Stok</button><button type="button" onclick="openStocktake(decodeURIComponent('${safeId}'))" class="mt-2 w-full rounded-xl bg-indigo-50 px-3 py-2.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100"><i class="fa-solid fa-clipboard-check mr-1"></i>Catat Stok Opname</button><div class="mt-2 grid grid-cols-2 gap-2"><button type="button" onclick="openStockHistory(decodeURIComponent('${safeId}'))" class="rounded-xl bg-slate-100 px-3 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-200"><i class="fa-solid fa-clock-rotate-left mr-1"></i>Riwayat</button><button type="button" onclick="promptStockDelete(decodeURIComponent('${safeId}'))" class="rounded-xl bg-rose-50 px-3 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-100"><i class="fa-solid fa-trash-can mr-1"></i>Hapus</button></div></article>`;
+    return `<article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div class="flex items-center justify-between gap-3"><div class="min-w-0"><h3 class="truncate text-sm font-bold text-slate-800">${escapeHtml(item.nama || item.name || "Barang")}</h3><p class="mt-1 text-[11px] text-slate-500">${escapeHtml(item.tipe || "Umum")} · ${escapeHtml(item.satuan || "unit")}</p></div><div class="shrink-0 text-right"><strong class="block text-sm text-slate-800">${stock.toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</strong><span class="mt-1 inline-flex rounded-full px-2 py-1 text-[9px] font-bold ${color}">${state}</span></div></div><button type="button" onclick="openStockUpdate(decodeURIComponent('${safeId}'))" class="mt-3 w-full rounded-xl bg-sky-50 px-3 py-2.5 text-xs font-bold text-sky-700 hover:bg-sky-100"><i class="fa-solid fa-pen-to-square mr-1"></i>Update Stok</button><button type="button" onclick="openStocktake(decodeURIComponent('${safeId}'))" class="mt-2 w-full rounded-xl bg-indigo-50 px-3 py-2.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100"><i class="fa-solid fa-clipboard-check mr-1"></i>Catat Stok Opname</button><div class="mt-2 grid grid-cols-2 gap-2"><button type="button" onclick="openStockHistory(decodeURIComponent('${safeId}'))" class="rounded-xl bg-slate-100 px-3 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-200"><i class="fa-solid fa-clock-rotate-left mr-1"></i>Riwayat</button><button type="button" onclick="promptStockDelete(decodeURIComponent('${safeId}'))" class="rounded-xl bg-rose-50 px-3 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-100"><i class="fa-solid fa-trash-can mr-1"></i>Hapus</button></div></article>`;
   }).join("") : '<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">Barang tidak ditemukan.</div>';
 };
 
 window.openAdminPwaAddStockItem = function () {
   document.querySelector("#adminPwaAddStockModal form")?.reset();
-  const dateInput = document.getElementById("adminPwaNewItemDate");
-  if (dateInput) dateInput.value = getLocalDateString();
+  const openingDate = document.getElementById("adminPwaNewItemDate");
+  if (openingDate) openingDate.value = getLocalDateString();
   const modal = document.getElementById("adminPwaAddStockModal");
   modal?.classList.remove("hidden");
   modal?.classList.add("flex");
@@ -1833,34 +1938,31 @@ window.openAdminPwaAddStockItem = function () {
 window.submitAdminPwaAddStockItem = async function (event) {
   event.preventDefault();
   const button = document.getElementById("adminPwaAddStockSaveButton");
-  const id = `b_${Date.now()}`;
+  const name = document.getElementById("adminPwaNewItemName").value.trim();
+  const unit = document.getElementById("adminPwaNewItemUnit").value.trim();
+  const id = getInventoryDocumentId(name, unit);
   const item = {
     id,
-    nama: document.getElementById("adminPwaNewItemName").value.trim(),
-    tanggal: document.getElementById("adminPwaNewItemDate").value,
+    nama: name,
     tipe: document.getElementById("adminPwaNewItemType").value,
-    harga: Number(document.getElementById("adminPwaNewItemPrice").value || 0),
-    kebutuhan: 0,
-    satuan: document.getElementById("adminPwaNewItemUnit").value.trim(),
-    datang: 0,
+    satuan: unit,
+    datang: Number(document.getElementById("adminPwaNewItemOpeningStock").value || 0),
     stockHistory: [],
-    arrivalHistory: [],
-    statusAdmin: "Pending",
-    statusSuperAdmin: "Pending",
-    img: "",
   };
-  if (!item.nama || !item.tanggal || !item.satuan) return;
+  if (!item.nama || !item.satuan || item.datang < 0) return;
+  if (window.appState.inventoryItems.some((entry) => String(entry.id) === id)) return showToast("Barang dan satuan tersebut sudah ada di daftar stok", "info");
+  if (item.datang > 0) item.stockHistory.push({ type: "masuk", quantity: item.datang, stockBefore: 0, stockAfter: item.datang, date: document.getElementById("adminPwaNewItemDate").value, note: "Saldo awal", createdAt: new Date().toISOString() });
   setButtonLoading(button, true, "Menyimpan...");
   try {
-    await setDoc(doc(db, "mbg_items", id), item);
-    window.appState.barang.unshift(item);
+    const existing = await getDoc(doc(db, "inventory_items", id));
+    if (existing.exists()) return showToast("Barang dan satuan tersebut sudah ada di daftar stok", "info");
+    await setDoc(doc(db, "inventory_items", id), item);
+    window.appState.inventoryItems.unshift(item);
     renderAdminPwaStock();
     renderStockTable();
-    renderBarangTable();
     renderAdminPwaDashboard();
-    updateDashboardMetrics();
     closeStockModal("adminPwaAddStockModal");
-    showToast("Barang berhasil ditambahkan ke Firestore", "success");
+    showToast("Barang stok berhasil ditambahkan ke Firestore", "success");
   } catch (error) {
     showToast(error.message || "Barang gagal disimpan ke Firestore", "error");
   } finally {
@@ -2039,7 +2141,14 @@ window.submitAdminArrival = async function (event) {
     submitButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Menyimpan ke Firestore...</span>';
     const receivedAt = new Date(`${date}T${time}`);
     const recordedAt = new Date().toISOString();
-    const stockBefore = Number(item.datang || 0);
+    const inventoryId = getInventoryDocumentId(item.nama || item.name || "Barang", item.satuan || "unit");
+    const inventoryRef = doc(db, "inventory_items", inventoryId);
+    const inventorySnapshot = await getDoc(inventoryRef);
+    const cachedInventoryItem = window.appState.inventoryItems.find((entry) => String(entry.id) === inventoryId) || {};
+    const inventoryItem = inventorySnapshot.exists()
+      ? { id: inventorySnapshot.id, ...inventorySnapshot.data() }
+      : cachedInventoryItem;
+    const stockBefore = Number(inventoryItem.datang || 0);
     const stockAfter = stockBefore + quantity;
     const note = document.getElementById("adminArrivalNote").value.trim();
     photoRef = doc(collection(db, "barang_arrival_photos"));
@@ -2060,13 +2169,19 @@ window.submitAdminArrival = async function (event) {
     const updatedItem = {
       ...item,
       statusAdmin: "ACC",
-      datang: stockAfter,
       arrivalHistory: [
         ...(Array.isArray(item.arrivalHistory) ? item.arrivalHistory : []),
         arrival,
       ],
+    };
+    const updatedInventoryItem = {
+      nama: inventoryItem.nama || item.nama || item.name || "Barang",
+      tipe: inventoryItem.tipe || item.tipe || "Umum",
+      satuan: inventoryItem.satuan || item.satuan || "unit",
+      datang: stockAfter,
+      sourcePlanningItemIds: [...new Set([...(inventoryItem.sourcePlanningItemIds || []), String(item.id)])],
       stockHistory: [
-        ...(Array.isArray(item.stockHistory) ? item.stockHistory : []),
+        ...(Array.isArray(inventoryItem.stockHistory) ? inventoryItem.stockHistory : []),
         {
           type: "masuk",
           quantity,
@@ -2078,7 +2193,8 @@ window.submitAdminArrival = async function (event) {
         },
       ],
     };
-    await setDoc(photoRef, {
+    const batch = writeBatch(db);
+    batch.set(photoRef, {
       itemId: String(item.id),
       itemName: item.nama || item.name || "Barang",
       receivedDate: date,
@@ -2089,11 +2205,17 @@ window.submitAdminArrival = async function (event) {
       sizeBytes: compressedPhoto.sizeBytes,
       dataUrl: compressedPhoto.dataUrl,
     });
-    await setDoc(doc(db, "mbg_items", String(item.id)), updatedItem);
+    batch.set(doc(db, "mbg_items", String(item.id)), updatedItem);
+    batch.set(inventoryRef, updatedInventoryItem);
+    await batch.commit();
     parentItemSaved = true;
     window.appState.barang = window.appState.barang.map((entry) =>
       String(entry.id) === String(item.id) ? updatedItem : entry,
     );
+    const inventoryIndex = window.appState.inventoryItems.findIndex((entry) => String(entry.id) === inventoryId);
+    const nextInventoryItem = { id: inventoryId, ...updatedInventoryItem };
+    if (inventoryIndex < 0) window.appState.inventoryItems.unshift(nextInventoryItem);
+    else window.appState.inventoryItems[inventoryIndex] = nextInventoryItem;
     renderAdminArrivalPage();
     renderStockTable();
     renderBarangTable();
@@ -2115,7 +2237,11 @@ window.renderStockTable = function () {
   const summary = document.getElementById("stockSummary");
   if (!tbody || !summary) return;
 
-  const items = window.appState.barang;
+  if (!window.appState.inventoryLoaded) {
+    tbody.innerHTML = '<tr><td colspan="5" class="py-10 text-center text-sky-700"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Memuat stok...</td></tr>';
+    return;
+  }
+  const items = window.appState.inventoryItems;
   const stockState = (item) => {
     return Number(item.datang) > 0 ? "available" : "empty";
   };
@@ -2373,7 +2499,8 @@ window.selectSppDatabaseItem = function (select) {
   const unitInput = row?.querySelector(".spp-item-unit");
   const unitLabel = row?.querySelector(".spp-item-unit-label");
   const priceInput = row?.querySelector(".spp-item-price");
-  const billableQuantity = item ? (Number(item.datang) > 0 ? Number(item.datang) : Number(item.kebutuhan || 0)) : 0;
+  const receivedQuantity = item ? getItemReceivedQuantity(item) : 0;
+  const billableQuantity = item ? (receivedQuantity > 0 ? receivedQuantity : Number(item.kebutuhan || 0)) : 0;
   if (quantityInput) quantityInput.value = item ? billableQuantity : "";
   if (unitInput) unitInput.value = item?.satuan || "";
   if (unitLabel) unitLabel.textContent = item?.satuan || "";
@@ -2975,8 +3102,57 @@ window.generateSppLetter = function (event) {
     .finally(() => setButtonLoading(submitButton, false));
 };
 
+window.openStockItemModal = function () {
+  const form = document.getElementById("formStockItem");
+  form?.reset();
+  const date = document.getElementById("stockItemOpeningDate");
+  if (date) date.value = getLocalDateString();
+  document.getElementById("stockItemModal")?.classList.remove("hidden");
+  document.getElementById("stockItemModal")?.classList.add("flex");
+};
+
+window.closeStockItemModal = function () {
+  document.getElementById("stockItemModal")?.classList.add("hidden");
+  document.getElementById("stockItemModal")?.classList.remove("flex");
+};
+
+window.saveStockItem = async function (event) {
+  event.preventDefault();
+  const name = document.getElementById("stockItemName").value.trim();
+  const unit = document.getElementById("stockItemUnit").value.trim();
+  const opening = Number(document.getElementById("stockItemOpening").value || 0);
+  const date = document.getElementById("stockItemOpeningDate").value || getLocalDateString();
+  if (!name || !unit || !Number.isFinite(opening) || opening < 0) return;
+  const id = getInventoryDocumentId(name, unit);
+  const item = {
+    nama: name,
+    tipe: document.getElementById("stockItemType").value || "Umum",
+    satuan: unit,
+    datang: opening,
+    stockHistory: opening > 0 ? [{ type: "masuk", quantity: opening, stockBefore: 0, stockAfter: opening, date, note: "Saldo awal", createdAt: new Date().toISOString() }] : [],
+  };
+  const button = event.submitter;
+  if (window.appState.inventoryItems.some((entry) => String(entry.id) === id)) return showToast("Barang dan satuan tersebut sudah ada di daftar stok", "info");
+  setButtonLoading(button, true, "Menyimpan...");
+  try {
+    const existing = await getDoc(doc(db, "inventory_items", id));
+    if (existing.exists()) return showToast("Barang dan satuan tersebut sudah ada di daftar stok", "info");
+    await setDoc(doc(db, "inventory_items", id), item);
+    window.appState.inventoryItems.unshift({ id, ...item });
+    renderStockTable();
+    renderAdminPwaStock();
+    renderAdminPwaDashboard();
+    window.closeStockItemModal();
+    showToast("Barang stok berhasil ditambahkan", "success");
+  } catch (error) {
+    showToast(error.message || "Barang stok gagal disimpan", "error");
+  } finally {
+    setButtonLoading(button, false);
+  }
+};
+
 window.openStockUpdate = function (itemId) {
-  const item = window.appState.barang.find((entry) => String(entry.id) === String(itemId));
+  const item = window.appState.inventoryItems.find((entry) => String(entry.id) === String(itemId));
   if (!item) return;
   document.getElementById("stockUpdateItemId").value = item.id;
   document.getElementById("stockUpdateItemName").textContent = `${item.nama || item.name || "Barang"} - stok saat ini ${Number(item.datang || 0).toLocaleString("id-ID")} ${item.satuan || ""}`;
@@ -2995,7 +3171,7 @@ window.downloadStockReport = function () {
     return;
   }
   const summaryByItem = new Map();
-  for (const item of window.appState.barang) {
+  for (const item of window.appState.inventoryItems) {
     const dayEntries = (Array.isArray(item.stockHistory) ? item.stockHistory : [])
       .filter((entry) => String(entry.date || "") === reportDate)
       .sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
@@ -3045,7 +3221,7 @@ window.downloadStockReport = function () {
 };
 
 window.openStocktakeReport = function () {
-  const records = window.appState.barang.flatMap((item) =>
+  const records = window.appState.inventoryItems.flatMap((item) =>
     (Array.isArray(item.stockHistory) ? item.stockHistory : [])
       .filter((entry) => entry.type === "opname")
       .map((entry) => ({ item, entry })),
@@ -3066,7 +3242,7 @@ window.openStocktakeReport = function () {
 };
 
 window.openStocktake = function (itemId) {
-  const item = window.appState.barang.find((entry) => String(entry.id) === String(itemId));
+  const item = window.appState.inventoryItems.find((entry) => String(entry.id) === String(itemId));
   if (!item) return;
   const balance = Number(item.datang || 0);
   document.getElementById("stocktakeItemId").value = item.id;
@@ -3082,7 +3258,7 @@ window.openStocktake = function (itemId) {
 };
 
 window.updateStocktakeDifference = function () {
-  const system = Number(window.appState.barang.find((item) => String(item.id) === String(document.getElementById("stocktakeItemId")?.value))?.datang || 0);
+  const system = Number(window.appState.inventoryItems.find((item) => String(item.id) === String(document.getElementById("stocktakeItemId")?.value))?.datang || 0);
   const physical = Number(document.getElementById("stocktakePhysicalBalance")?.value || 0);
   const difference = physical - system;
   const output = document.getElementById("stocktakeDifference");
@@ -3101,7 +3277,7 @@ window.updateStocktakeDifference = function () {
 window.submitStocktake = async function (event) {
   event.preventDefault();
   const itemId = document.getElementById("stocktakeItemId").value;
-  const item = window.appState.barang.find((entry) => String(entry.id) === String(itemId));
+  const item = window.appState.inventoryItems.find((entry) => String(entry.id) === String(itemId));
   const physical = Number(document.getElementById("stocktakePhysicalBalance").value);
   const date = document.getElementById("stocktakeDate").value;
   const note = document.getElementById("stocktakeNote").value.trim();
@@ -3135,10 +3311,9 @@ window.submitStocktake = async function (event) {
   const button = document.getElementById("stocktakeSubmitButton");
   setButtonLoading(button, true, "Menyimpan...");
   try {
-    await setDoc(doc(db, "mbg_items", String(itemId)), updatedItem);
-    window.appState.barang = window.appState.barang.map((entry) => String(entry.id) === String(itemId) ? updatedItem : entry);
+    await setDoc(doc(db, "inventory_items", String(itemId)), updatedItem);
+    window.appState.inventoryItems = window.appState.inventoryItems.map((entry) => String(entry.id) === String(itemId) ? updatedItem : entry);
     renderStockTable();
-    renderBarangTable();
     renderAdminPwaStock();
     renderAdminPwaDashboard();
     updateDashboardMetrics();
@@ -3154,7 +3329,7 @@ window.submitStocktake = async function (event) {
 window.submitStockUpdate = async function (event) {
   event.preventDefault();
   const itemId = document.getElementById("stockUpdateItemId").value;
-  const item = window.appState.barang.find((entry) => String(entry.id) === String(itemId));
+  const item = window.appState.inventoryItems.find((entry) => String(entry.id) === String(itemId));
   const quantity = Number(document.getElementById("stockUpdateQuantity").value);
   if (!item || !Number.isFinite(quantity) || quantity <= 0) return;
   const type = document.getElementById("stockUpdateType").value;
@@ -3189,17 +3364,16 @@ window.submitStockUpdate = async function (event) {
   const saveButton = document.getElementById("adminPwaStockSaveButton") || event.submitter;
   setButtonLoading(saveButton, true, "Menyimpan...");
   try {
-    await setDoc(doc(db, "mbg_items", String(itemId)), updatedItem);
-    window.appState.barang = window.appState.barang.map((entry) => String(entry.id) === String(itemId) ? updatedItem : entry);
+    await setDoc(doc(db, "inventory_items", String(itemId)), updatedItem);
+    window.appState.inventoryItems = window.appState.inventoryItems.map((entry) => String(entry.id) === String(itemId) ? updatedItem : entry);
     renderStockTable();
-    renderBarangTable();
     renderAdminPwaStock();
     renderAdminPwaDashboard();
     updateDashboardMetrics();
     showToast(`Transaksi barang ${type} berhasil disimpan`, "success");
   } catch (error) {
-    const index = window.appState.barang.findIndex((entry) => String(entry.id) === String(itemId));
-    if (index >= 0) window.appState.barang[index] = updatedItem;
+    const index = window.appState.inventoryItems.findIndex((entry) => String(entry.id) === String(itemId));
+    if (index >= 0) window.appState.inventoryItems[index] = updatedItem;
     renderStockTable();
     renderAdminPwaStock();
     renderAdminPwaDashboard();
@@ -3211,7 +3385,7 @@ window.submitStockUpdate = async function (event) {
 };
 
 window.openStockHistory = function (itemId) {
-  const item = window.appState.barang.find((entry) => String(entry.id) === String(itemId));
+  const item = window.appState.inventoryItems.find((entry) => String(entry.id) === String(itemId));
   if (!item) return;
   document.getElementById("stockHistoryItemName").textContent = item.nama || item.name || "Barang";
   const historyList = document.getElementById("stockHistoryList");
@@ -3257,7 +3431,7 @@ window.exportBarangReport = function () {
   if (!filtered.length) return showToast("Tidak ada data untuk diekspor", "error");
   const columns = ["ID", "Nama Barang", "Tanggal", "Tipe", "Harga", "Satuan", "Kebutuhan", "Datang", "Status Admin", "Status Super Admin"];
   const escapeCell = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
-  const rows = filtered.map((item) => [item.id, item.nama || item.name, item.tanggal, item.tipe, item.harga, item.satuan, item.kebutuhan, item.datang, item.statusAdmin || "Pending", item.statusSuperAdmin || "Pending"]);
+  const rows = filtered.map((item) => [item.id, item.nama || item.name, item.tanggal, item.tipe, item.harga, item.satuan, item.kebutuhan, getItemReceivedQuantity(item), item.statusAdmin || "Pending", item.statusSuperAdmin || "Pending"]);
   const csv = "\uFEFF" + [columns, ...rows].map((row) => row.map(escapeCell).join(",")).join("\r\n");
   const blobUrl = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
   const link = document.createElement("a");
@@ -4604,7 +4778,7 @@ window.openDetailBarang = function (id) {
   document.getElementById("detailHarga").innerText = formatRupiah(item.harga);
   document.getElementById("detailTanggal").innerText = item.tanggal || "-";
   document.getElementById("detailKebutuhan").innerText = item.kebutuhan || 0;
-  document.getElementById("detailDatang").innerText = item.datang || 0;
+  document.getElementById("detailDatang").innerText = getItemReceivedQuantity(item);
   document.getElementById("detailSatuan").innerText = item.satuan || "-";
   document.getElementById("detailStatusAdmin").innerText =
     item.statusAdmin || "Pending";
@@ -4780,15 +4954,15 @@ window.promptDelete = function (type, id, name) {
 };
 
 window.promptStockDelete = function (id) {
-  const item = window.appState.barang.find((entry) => String(entry.id) === String(id));
+  const item = window.appState.inventoryItems.find((entry) => String(entry.id) === String(id));
   if (!item) return;
   window.appState.pendingDelete = {
-    type: "barang",
+    type: "inventory_item",
     id: item.id,
     name: item.nama || item.name || "Barang",
   };
   document.getElementById("deleteConfirmText").innerText =
-    `Hapus ${item.nama || item.name || "barang"} beserta saldo dan seluruh riwayat stoknya?`;
+    `Hapus ${item.nama || item.name || "barang stok"} beserta saldo dan seluruh riwayatnya?`;
   document.getElementById("modalConfirmDelete").classList.remove("hidden");
   document.getElementById("modalConfirmDelete").classList.add("flex");
 };
@@ -4807,8 +4981,10 @@ window.executePendingDelete = async function () {
 
   const { type, id, name } = pending;
   const colName =
-    type === "barang"
-      ? "mbg_items"
+    type === "inventory_item"
+      ? "inventory_items"
+      : type === "barang"
+        ? "mbg_items"
       : type === "supplier"
         ? "suppliers"
         : type === "pm"
@@ -4817,7 +4993,12 @@ window.executePendingDelete = async function () {
 
   try {
     await deleteDoc(doc(db, colName, String(id)));
-    if (type === "barang") {
+    if (type === "inventory_item") {
+      window.appState.inventoryItems = window.appState.inventoryItems.filter((item) => String(item.id) !== String(id));
+      renderStockTable();
+      renderAdminPwaStock();
+      renderAdminPwaDashboard();
+    } else if (type === "barang") {
       window.appState.barang = window.appState.barang.filter((item) => String(item.id) !== String(id));
       renderBarangTable();
       renderStockTable();
@@ -4837,7 +5018,8 @@ window.executePendingDelete = async function () {
       );
       renderPMCards();
     }
-    if (type === "barang") showToast(err.message || "Barang gagal dihapus dari database", "error");
+    if (type === "inventory_item") showToast(err.message || "Barang stok gagal dihapus dari database", "error");
+    else if (type === "barang") showToast(err.message || "Barang gagal dihapus dari database", "error");
     else showToast(`${name} dihapus secara lokal`, "info");
   } finally {
     setButtonLoading(confirmButton, false);

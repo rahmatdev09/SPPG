@@ -1,4 +1,4 @@
-const CACHE_NAME = "mbg-pwa-v43-letter-database-photos";
+const CACHE_NAME = "mbg-pwa-v44-separated-stock-catalog";
 const APP_SHELL = [
   "./",
   "./index.html",

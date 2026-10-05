@@ -575,7 +575,7 @@
           <div>
             <h3 class="font-bold">Tambah Barang</h3>
             <p class="mt-1 text-xs text-slate-500">
-              Barang baru akan dibuat dengan stok awal 0.
+              Barang dibuat di daftar persediaan terpisah dari Kelola Barang.
             </p>
           </div>
           <button
@@ -603,7 +603,7 @@
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label for="adminPwaNewItemDate" class="mb-1 block font-semibold"
-                >Tanggal</label
+                >Tanggal saldo awal</label
               ><input
                 id="adminPwaNewItemDate"
                 type="date"
@@ -625,13 +625,14 @@
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label for="adminPwaNewItemPrice" class="mb-1 block font-semibold"
-                >Harga satuan (Rp)</label
+              <label for="adminPwaNewItemOpeningStock" class="mb-1 block font-semibold"
+                >Saldo awal</label
               ><input
-                id="adminPwaNewItemPrice"
+                id="adminPwaNewItemOpeningStock"
                 type="number"
                 min="0"
-                step="1"
+                step="any"
+                value="0"
                 required
                 inputmode="numeric"
                 class="w-full rounded-xl border border-slate-200 px-3 py-3"

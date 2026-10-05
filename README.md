@@ -52,7 +52,8 @@ Setelah Super Admin pertama bisa login, akun berikutnya dapat dikelola dari menu
 Publikasikan isi berkas [`firestore.rules`](./firestore.rules) ke Firebase Console > Firestore Database > **Rules** setiap kali aturan berubah. Koleksi aplikasi yang diatur di dalamnya meliputi:
 
 - `app_users`: akun dan role; pengelolaannya khusus Super Admin.
-- `mbg_items`, `suppliers`, `menus`, `barang_arrival_photos`, dan `payment_letters`: hanya dapat diakses akun aktif yang memiliki role `super_admin` atau `admin_logistik`.
+- `mbg_items`, `inventory_items`, `suppliers`, `menus`, `barang_arrival_photos`, dan `payment_letters`: hanya dapat diakses akun aktif yang memiliki role `super_admin` atau `admin_logistik`.
+- `app_metadata`: penanda migrasi awal katalog stok.
 - `pms`: dapat dibaca akun aktif dan hanya dapat diubah Super Admin.
 - Dokumen lain ditolak secara default.
 
@@ -68,6 +69,7 @@ Halaman Dokumen meminta izin Google Drive melalui login Google. Aktifkan **Googl
 
 - Pengaturan dapur, yayasan, logo, lokasi, dan nama penandatangan disimpan di `localStorage` browser/perangkat yang dipakai.
 - Surat permintaan pembayaran disimpan di koleksi Firestore `payment_letters`. Surat tersimpan mencakup rincian barang, supplier, penandatangan, salinan kop, dan lampiran yang dikompres. Total ukuran lampiran dibatasi agar dokumen tidak melewati batas Firestore.
+- Kelola Barang dan Stok Barang memakai koleksi terpisah: `mbg_items` untuk rencana/penerimaan harian dan `inventory_items` untuk saldo serta riwayat persediaan. Saat pembaruan pertama, saldo lama yang memiliki stok atau riwayat disalin satu kali ke katalog persediaan dan barang dengan nama serta satuan yang sama digabung. Penerimaan PWA berikutnya mencatat transaksi ke persediaan.
 
 ## PWA dan cache
 

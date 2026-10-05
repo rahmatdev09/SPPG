@@ -196,44 +196,54 @@
       <main class="flex-1 p-6 sm:p-10 max-w-7xl w-full mx-auto space-y-8">
         <section class="space-y-6 animate-fadeIn">
           <div class="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-5">
-            <div class="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(240px,1.4fr)_minmax(150px,.7fr)_minmax(150px,.7fr)_minmax(150px,.7fr)]">
-              <div class="relative min-w-0">
+            <div class="mb-4 flex flex-col gap-1">
+              <h2 class="text-sm font-bold text-slate-800">Daftar Barang</h2>
+              <p class="text-xs text-slate-500">Cari barang dan atur filter sebelum melihat data atau membuat laporan.</p>
+            </div>
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(260px,1.5fr)_minmax(150px,.8fr)_minmax(160px,.8fr)_minmax(160px,.8fr)]">
+              <label class="relative block min-w-0">
+                <span class="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-slate-400">Cari barang</span>
                 <i
-                  class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"
+                  class="fa-solid fa-magnifying-glass absolute left-3.5 top-[2.35rem] text-slate-400 text-xs"
                 ></i>
                 <input
                   type="text"
                   id="searchBarang"
                   oninput="filterBarangTable()"
                   placeholder="Cari nama barang..."
-                  class="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-9 pr-4 text-xs outline-none transition-all focus:bg-white focus:ring-2 focus:ring-sky-500"
+                  class="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-9 pr-4 text-sm outline-none transition-all placeholder:text-slate-400 focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-500/20"
                 />
-              </div>
+              </label>
+              <label class="block min-w-0"><span class="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-slate-400">Tipe barang</span>
               <select
                 id="filterTipeBarang"
                 onchange="filterBarangTable()"
                 aria-label="Filter tipe barang"
-                class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs font-medium text-slate-600 outline-none focus:ring-2 focus:ring-sky-500"
+                class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-500/20"
               >
                 <option value="ALL">Semua Tipe</option>
                 <option value="Utama">Utama</option>
                 <option value="Tambahan">Tambahan</option>
               </select>
-              <label class="min-w-0"><span class="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-400">Dari tanggal</span><input id="filterTanggalMulaiBarang" type="date" aria-label="Tanggal mulai" onchange="filterBarangTable()" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600 outline-none focus:ring-2 focus:ring-sky-500" /></label>
-              <label class="min-w-0"><span class="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-400">Sampai tanggal</span><input id="filterTanggalAkhirBarang" type="date" aria-label="Tanggal akhir" onchange="filterBarangTable()" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600 outline-none focus:ring-2 focus:ring-sky-500" /></label>
+              </label>
+              <label class="block min-w-0"><span class="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-slate-400">Dari tanggal</span><input id="filterTanggalMulaiBarang" type="date" aria-label="Tanggal mulai" onchange="filterBarangTable()" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700 outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-500/20" /></label>
+              <label class="block min-w-0"><span class="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-slate-400">Sampai tanggal</span><input id="filterTanggalAkhirBarang" type="date" aria-label="Tanggal akhir" onchange="filterBarangTable()" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700 outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-500/20" /></label>
             </div>
 
-            <div class="mt-4 flex flex-col gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-              <p class="text-[11px] text-slate-400"><i class="fa-solid fa-circle-info mr-1 text-sky-500"></i>Filter berdasarkan nama, tipe, dan rentang tanggal</p>
-              <div class="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
-              <button onclick="openRabModal()" class="flex min-h-10 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-violet-700"><i class="fa-solid fa-file-invoice-dollar"></i><span>Download RAB</span></button>
-              <button onclick="exportBarangReport()" class="flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-semibold text-emerald-700 transition-all hover:bg-emerald-100"><i class="fa-solid fa-file-csv"></i><span>Ekspor CSV</span></button>
-              <a href="./admin-penerimaan.html" class="flex min-h-10 items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-center text-xs font-semibold text-sky-700 transition-all hover:bg-sky-100">
-                <i class="fa-solid fa-mobile-screen-button"></i><span>PWA Admin Penerimaan</span>
+            <div class="mt-4 flex flex-col gap-4 border-t border-slate-100 pt-4 xl:flex-row xl:items-center xl:justify-between">
+              <div class="flex min-w-0 items-start gap-2 rounded-xl bg-slate-50 px-3.5 py-3 text-xs text-slate-500 xl:bg-transparent xl:px-0 xl:py-0">
+                <i class="fa-solid fa-circle-info mt-0.5 text-sky-500"></i>
+                <span>Hasil mengikuti nama, tipe barang, dan rentang tanggal yang dipilih.</span>
+              </div>
+              <div class="grid grid-cols-2 gap-2 sm:grid-cols-2 xl:flex xl:flex-wrap xl:justify-end">
+              <button onclick="openRabModal()" class="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2"><i class="fa-solid fa-file-invoice-dollar"></i><span>Download RAB</span></button>
+              <button onclick="exportBarangReport()" class="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:ring-offset-2"><i class="fa-solid fa-file-csv"></i><span>Ekspor CSV</span></button>
+              <a href="./admin-penerimaan.html" class="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-center text-xs font-semibold text-sky-700 transition hover:bg-sky-100 focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2">
+                <i class="fa-solid fa-mobile-screen-button"></i><span>Admin Penerimaan</span>
               </a>
               <button
                 onclick="openModalBarang()"
-                class="flex min-h-10 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-sky-600/20 transition-all hover:bg-sky-700"
+                class="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-sky-600/20 transition hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2"
               >
                 <i class="fa-solid fa-plus text-xs"></i>
                 <span>Tambah Barang</span>
