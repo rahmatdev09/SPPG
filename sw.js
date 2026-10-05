@@ -1,4 +1,4 @@
-const CACHE_NAME = "mbg-pwa-v38-rab-summary-width";
+const CACHE_NAME = "mbg-pwa-v43-letter-database-photos";
 const APP_SHELL = [
   "./",
   "./index.html",

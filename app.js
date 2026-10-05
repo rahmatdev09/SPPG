@@ -79,6 +79,8 @@ let adminArrivalPhotoPreviewUrl = null;
 let sppProductPhotoLayouts = [];
 let sppInvoicePhotos = [];
 let sppProductPhotoLayout = 1;
+let sppDatabaseProductPhotos = [];
+let sppDatabasePhotoLoadVersion = 0;
 let sppEditingLetterId = "";
 const ADMIN_ARRIVAL_PAGE_SIZE = 10;
 let adminArrivalVisibleCount = ADMIN_ARRIVAL_PAGE_SIZE;
@@ -167,6 +169,21 @@ function setupInstallPrompt() {
     installButton.classList.remove("hidden");
     installButton.classList.add("inline-flex");
   };
+  const markInstalled = () => {
+    try { localStorage.setItem("mbgPwaInstalled", "true"); } catch {}
+    showInstallButton();
+    installButton.disabled = true;
+    installButton.classList.remove("hover:bg-emerald-500/20", "text-emerald-300");
+    installButton.classList.add("cursor-default", "text-emerald-200");
+    installButton.innerHTML = '<i class="fa-solid fa-circle-check"></i><span>Terinstal</span>';
+  };
+  const installedPreviously = window.matchMedia("(display-mode: standalone)").matches
+    || window.navigator.standalone === true
+    || localStorage.getItem("mbgPwaInstalled") === "true";
+  if (installedPreviously) {
+    markInstalled();
+    return;
+  }
 
   window.addEventListener("beforeinstallprompt", (event) => {
     event.preventDefault();
@@ -176,30 +193,25 @@ function setupInstallPrompt() {
 
   window.addEventListener("appinstalled", () => {
     deferredPrompt = null;
-    installButton.classList.add("hidden");
-    installButton.classList.remove("inline-flex");
+    markInstalled();
     showToast("MBG berhasil dipasang sebagai aplikasi", "success");
   });
 
   installButton.addEventListener("click", async () => {
     if (!deferredPrompt) {
-      showToast(
-        "Browser belum siap untuk install aplikasi, atau aplikasi sudah terpasang.",
-        "info",
-      );
+      showToast("Browser belum menyediakan proses pemasangan aplikasi.", "info");
       return;
     }
 
     deferredPrompt.prompt();
     const choice = await deferredPrompt.userChoice;
     if (choice.outcome === "accepted") {
+      markInstalled();
       showToast("Proses pemasangan dimulai", "success");
     } else {
       showToast("Pemasangan dibatalkan", "info");
     }
     deferredPrompt = null;
-    installButton.classList.add("hidden");
-    installButton.classList.remove("inline-flex");
   });
 }
 
@@ -2585,6 +2597,91 @@ window.clearSppAttachments = function (kind) {
   renderSppAttachmentPreviews();
 };
 
+function getSppPhotoDate(value) {
+  if (!value) return "";
+  const text = String(value);
+  const isoDate = text.match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+  if (isoDate) return isoDate;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "" : getLocalDateString(parsed);
+}
+
+window.loadSppDatabaseProductPhotos = async function () {
+  const dateInput = document.getElementById("sppProductPhotoDate");
+  const list = document.getElementById("sppDatabaseProductPhotoList");
+  const status = document.getElementById("sppDatabaseProductPhotoStatus");
+  if (!dateInput || !list || !status) return;
+  const selectedDate = dateInput.value;
+  const loadVersion = ++sppDatabasePhotoLoadVersion;
+  list.innerHTML = "";
+  if (!selectedDate) {
+    sppDatabaseProductPhotos = [];
+    status.textContent = "Pilih tanggal untuk mencari foto penerimaan barang.";
+    return;
+  }
+
+  const items = (window.appState?.barang || []).filter((item) => {
+    const matchingArrival = (Array.isArray(item.arrivalHistory) ? item.arrivalHistory : [])
+      .some((arrival) => getSppPhotoDate(arrival.receivedAt || arrival.recordedAt) === selectedDate);
+    return getSppPhotoDate(item.tanggal || item.date) === selectedDate || matchingArrival;
+  });
+  status.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Memuat foto dari database...';
+  const photos = await Promise.all(items.map(async (item) => {
+    const matchingArrivals = (Array.isArray(item.arrivalHistory) ? item.arrivalHistory : [])
+      .filter((entry) => getSppPhotoDate(entry.receivedAt || entry.recordedAt) === selectedDate)
+      .sort((a, b) => String(b.recordedAt || b.receivedAt || "").localeCompare(String(a.recordedAt || a.receivedAt || "")));
+    const arrival = matchingArrivals[0] || (getSppPhotoDate(item.tanggal || item.date) === selectedDate ? getLatestArrival(item) : null);
+    let dataUrl = arrival?.photoDataUrl
+      || (arrival?.photoId ? window.appState?.arrivalPhotoCache?.[arrival.photoId] : "")
+      || arrival?.photoUrl
+      || item.fotoPenerimaan || item.foto || item.fotoUrl || item.imageUrl
+      || (!arrival?.photoId ? item.img : "") || "";
+    if (!dataUrl && arrival?.photoId) {
+      try {
+        const snapshot = await getDoc(doc(db, "barang_arrival_photos", String(arrival.photoId)));
+        const photoData = snapshot.exists() ? snapshot.data() : null;
+        dataUrl = photoData?.dataUrl || photoData?.base64 || photoData?.foto || photoData?.image || "";
+        if (dataUrl) {
+          window.appState.arrivalPhotoCache ||= {};
+          window.appState.arrivalPhotoCache[arrival.photoId] = dataUrl;
+        }
+      } catch (error) {
+        console.warn("Foto penerimaan tidak dapat dimuat:", error);
+      }
+    }
+    if (!dataUrl || !/^data:image\//i.test(dataUrl) && !/^https?:\/\//i.test(dataUrl)) return null;
+    return {
+      key: `${item.id || item.nama || item.name}-${arrival?.photoId || "item"}`,
+      name: item.nama || item.name || "Foto barang",
+      dataUrl,
+      date: selectedDate,
+      detail: `${item.satuan || item.unit || ""}${arrival?.jumlah ? ` · ${arrival.jumlah} ${item.satuan || item.unit || ""}` : ""}`.trim(),
+    };
+  }));
+  if (loadVersion !== sppDatabasePhotoLoadVersion || dateInput.value !== selectedDate) return;
+  sppDatabaseProductPhotos = photos.filter(Boolean);
+  if (!sppDatabaseProductPhotos.length) {
+    status.textContent = items.length ? "Tidak ada foto penerimaan tersimpan untuk tanggal ini." : "Tidak ada barang di database pada tanggal ini.";
+    return;
+  }
+  status.textContent = `${sppDatabaseProductPhotos.length} foto barang ditemukan. Pilih foto, lalu tambahkan ke lembar layout yang aktif.`;
+  list.innerHTML = sppDatabaseProductPhotos.map((photo, index) => `<label class="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 p-2 hover:border-sky-300"><input type="checkbox" class="spp-db-product-photo h-4 w-4 accent-sky-700" value="${index}"><img src="${escapeHtml(photo.dataUrl)}" alt="${escapeHtml(photo.name)}" class="h-14 w-14 rounded-md object-cover"><span class="min-w-0 flex-1"><span class="block truncate text-[10px] font-semibold text-slate-700">${escapeHtml(photo.name)}</span><span class="block text-[9px] text-slate-500">${escapeHtml(photo.date)}${photo.detail ? ` · ${escapeHtml(photo.detail)}` : ""}</span></span></label>`).join("");
+};
+
+window.addSelectedSppDatabaseProductPhotos = function () {
+  const targetGroup = sppProductPhotoLayouts.find((group) => group.photos.length < group.layout);
+  if (!targetGroup) return showToast("Tambah lembar foto dan pilih layout terlebih dahulu", "info");
+  const selected = [...document.querySelectorAll(".spp-db-product-photo:checked")]
+    .map((input) => sppDatabaseProductPhotos[Number(input.value)])
+    .filter(Boolean);
+  if (!selected.length) return showToast("Pilih setidaknya satu foto barang", "info");
+  const remaining = targetGroup.layout - targetGroup.photos.length;
+  if (selected.length > remaining) return showToast(`Layout ini hanya membutuhkan ${remaining} foto lagi`, "error");
+  targetGroup.photos.push(...selected.map((photo) => ({ name: photo.name, dataUrl: photo.dataUrl })));
+  renderSppAttachmentPreviews();
+  document.querySelectorAll(".spp-db-product-photo:checked").forEach((input) => { input.checked = false; });
+};
+
 window.prepareSppAttachments = async function (event, kind = "product") {
   const files = [...(event.target.files || [])];
   const targetGroup = kind === "invoice" ? null : sppProductPhotoLayouts.find((group) => group.photos.length < group.layout);
@@ -2692,15 +2789,17 @@ window.openSppForm = function () {
   document.getElementById("sppFormTitle").textContent = "Buat Surat Permintaan Pembayaran";
   const submitButton = form?.querySelector("button[type='submit']");
   if (submitButton) submitButton.innerHTML = '<i class="fa-solid fa-eye mr-1"></i>Simpan &amp; Pratinjau';
+  const today = getLocalDateString();
   sppProductPhotoLayouts = [];
   sppInvoicePhotos = [];
   sppProductPhotoLayout = 1;
+  sppDatabaseProductPhotos = [];
   document.getElementById("sppProductPhotoLayout").value = "1";
+  document.getElementById("sppProductPhotoDate").value = today;
   document.getElementById("sppProductPhotoFiles").value = "";
   document.getElementById("sppInvoicePhotoFiles").value = "";
   renderSppAttachmentPreviews();
   document.getElementById("sppSupplierRows").innerHTML = "";
-  const today = getLocalDateString();
   document.getElementById("sppLetterDate").value = today;
   document.getElementById("sppBulkItemDate").value = today;
   window.addSppSupplierRow();
@@ -2713,6 +2812,7 @@ window.openSppForm = function () {
   const modal = document.getElementById("sppFormModal");
   modal.classList.remove("hidden");
   modal.classList.add("flex");
+  window.loadSppDatabaseProductPhotos();
 };
 
 window.editSavedSppLetter = function (letterId) {
