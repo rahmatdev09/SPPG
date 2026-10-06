@@ -19,7 +19,7 @@ Proyek ini tidak menggunakan proses build atau package manager. Jalankan berkas 
 | --- | --- |
 | `index.html` | Dashboard ringkasan |
 | `barang.html` | Kelola barang, penerimaan, persetujuan, dan RAB |
-| `stok.html` | Kelola stok, riwayat transaksi, serta stok opname |
+| `stok.html` | Kelola stok, batas minimum, peringatan restok, riwayat transaksi, serta stok opname |
 | `supplier.html` | Data supplier dan rekening |
 | `pm.html` | Data penerima manfaat, porsi, pagu, lokasi, dan rute |
 | `menu.html` | Data menu dan informasi AKG |
@@ -54,6 +54,7 @@ Publikasikan isi berkas [`firestore.rules`](./firestore.rules) ke Firebase Conso
 - `app_users`: akun dan role; pengelolaannya khusus Super Admin.
 - `mbg_items`, `inventory_items`, `suppliers`, `menus`, `barang_arrival_photos`, dan `payment_letters`: hanya dapat diakses akun aktif yang memiliki role `super_admin` atau `admin_logistik`.
 - `app_metadata`: penanda migrasi awal katalog stok.
+- `app_settings`: identitas dapur/yayasan, logo, lokasi, dan penandatangan yang dibagikan ke seluruh perangkat.
 - `pms`: dapat dibaca akun aktif dan hanya dapat diubah Super Admin.
 - Dokumen lain ditolak secara default.
 
@@ -67,9 +68,10 @@ Halaman Dokumen meminta izin Google Drive melalui login Google. Aktifkan **Googl
 
 ### Data pengaturan dan surat
 
-- Pengaturan dapur, yayasan, logo, lokasi, dan nama penandatangan disimpan di `localStorage` browser/perangkat yang dipakai.
+- Pengaturan dapur, yayasan, logo, lokasi, dan nama penandatangan disimpan bersama di `app_settings/organization`. Data lama di `localStorage` dimigrasikan otomatis saat dokumen bersama belum tersedia; cache lokal tetap dipakai untuk mempercepat tampilan.
 - Surat permintaan pembayaran disimpan di koleksi Firestore `payment_letters`. Surat tersimpan mencakup rincian barang, supplier, penandatangan, salinan kop, dan lampiran yang dikompres. Total ukuran lampiran dibatasi agar dokumen tidak melewati batas Firestore.
 - Kelola Barang dan Stok Barang memakai koleksi terpisah: `mbg_items` untuk rencana/penerimaan harian dan `inventory_items` untuk saldo serta riwayat persediaan. Saat pembaruan pertama, saldo lama yang memiliki stok atau riwayat disalin satu kali ke katalog persediaan dan barang dengan nama serta satuan yang sama digabung. Penerimaan PWA berikutnya mencatat transaksi ke persediaan.
+- Setiap barang stok dapat memiliki `minimumStock`. Peringatan muncul di Stok Barang dan dashboard PWA saat saldo sama dengan atau di bawah nilai tersebut; nilai `0` menonaktifkan peringatan.
 
 ## PWA dan cache
 

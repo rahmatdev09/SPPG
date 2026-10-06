@@ -42,6 +42,7 @@ window.appState = {
   barang: [],
   inventoryItems: [],
   inventoryLoaded: false,
+  kitchenSettings: null,
   suppliers: [],
   suppliersLoaded: false,
   menus: [],
@@ -977,6 +978,39 @@ function setupFirestoreListeners() {
   renderAdminPwaDashboard();
   renderAdminPwaStock();
   renderSppLetters();
+  onSnapshot(doc(db, "app_settings", "organization"), async (snapshot) => {
+    if (snapshot.exists()) {
+      const settings = snapshot.data();
+      window.appState.kitchenSettings = settings;
+      try { localStorage.setItem("mbgKitchenSettings", JSON.stringify(settings)); } catch {}
+      window.dispatchEvent(new Event("mbg-kitchen-settings-updated"));
+      return;
+    }
+
+    // Migrate existing per-device settings once if the shared document does not exist yet.
+    try {
+      const cached = JSON.parse(localStorage.getItem("mbgKitchenSettings") || "{}");
+      const hasSavedValues = Object.entries(cached).some(([key, value]) => key !== "updatedAt" && key !== "updatedBy" && Boolean(String(value || "").trim()));
+      if (hasSavedValues) {
+        await setDoc(doc(db, "app_settings", "organization"), {
+          ...cached,
+          updatedAt: new Date().toISOString(),
+          updatedBy: normalizeAccountEmail(window.appState.user?.email),
+        }, { merge: true });
+      } else {
+        window.appState.kitchenSettings = {};
+        window.dispatchEvent(new Event("mbg-kitchen-settings-updated"));
+      }
+    } catch (error) {
+      console.warn("Kitchen settings migration warning:", error);
+      window.appState.kitchenSettings = null;
+      window.dispatchEvent(new Event("mbg-kitchen-settings-updated"));
+    }
+  }, (error) => {
+    console.warn("Kitchen settings listener warning:", error);
+    window.appState.kitchenSettings = null;
+    window.dispatchEvent(new Event("mbg-kitchen-settings-updated"));
+  });
   onSnapshot(
     collection(db, "mbg_items"),
     (snapshot) => {
@@ -1611,7 +1645,7 @@ function renderBarangTable() {
   const tbody = document.getElementById("barangTableBody");
   if (!tbody) return;
 
-  if (!window.appState.barangLoaded) {
+  if (!window.appState.barangLoaded || !window.appState.inventoryLoaded) {
     tbody.innerHTML = `<tr><td colspan="8" class="px-5 py-10 text-center"><span class="inline-flex items-center gap-2 rounded-xl bg-sky-50 px-4 py-3 text-xs font-semibold text-sky-700"><i class="fa-solid fa-spinner fa-spin"></i>Memuat data barang dari Firebase...</span></td></tr>`;
     return;
   }
@@ -1711,6 +1745,13 @@ function getInventoryDocumentId(name, unit) {
     hash = Math.imul(hash ^ normalized.charCodeAt(index), 16777619);
   }
   return `stock_${(hash >>> 0).toString(36)}`;
+}
+
+function getLowStockInventoryItems(items = window.appState.inventoryItems || []) {
+  return items.filter((item) => {
+    const minimum = Number(item.minimumStock || 0);
+    return minimum > 0 && Number(item.datang || 0) <= minimum;
+  });
 }
 
 async function loadLatestArrivalPhotos(items) {
@@ -1859,7 +1900,7 @@ window.showAdminPwaTab = function (tab) {
 
 function renderAdminPwaDashboard() {
   if (!document.getElementById("adminDashboardPanel")) return;
-  const fields = ["adminDashTotalBarang", "adminDashPending", "adminDashArrivalsToday", "adminDashStockAvailable"];
+  const fields = ["adminDashTotalBarang", "adminDashPending", "adminDashArrivalsToday", "adminDashStockAvailable", "adminDashLowStock"];
   if (!window.appState.barangLoaded) {
     fields.forEach((id) => {
       const element = document.getElementById(id);
@@ -1871,17 +1912,25 @@ function renderAdminPwaDashboard() {
   const today = getLocalDateString();
   const arrivals = items.flatMap((item) => (Array.isArray(item.arrivalHistory) ? item.arrivalHistory : []).map((entry) => ({ item, entry })));
   const inventoryItems = window.appState.inventoryItems || [];
+  const lowStockItems = getLowStockInventoryItems(inventoryItems);
   const values = {
     adminDashTotalBarang: items.length,
     adminDashPending: items.filter((item) => (item.statusAdmin || "Pending") === "Pending").length,
     adminDashArrivalsToday: arrivals.filter(({ entry }) => String(entry.receivedDate || "") === today).length,
     adminDashStockAvailable: inventoryItems.filter((item) => Number(item.datang || 0) > 0).length,
+    adminDashLowStock: lowStockItems.length,
   };
   Object.entries(values).forEach(([id, value]) => {
     const element = document.getElementById(id);
     if (element) element.textContent = value.toLocaleString("id-ID");
   });
   const recent = document.getElementById("adminDashRecent");
+  const lowStockPanel = document.getElementById("adminDashLowStockList");
+  if (lowStockPanel) {
+    lowStockPanel.innerHTML = lowStockItems.length
+      ? lowStockItems.slice(0, 5).map((item) => `<div class="flex items-center justify-between gap-2 border-b border-amber-100 py-2 last:border-0"><span class="min-w-0 truncate text-xs font-semibold text-slate-700">${escapeHtml(item.nama || item.name || "Barang")}</span><span class="shrink-0 text-[10px] font-bold text-amber-700">${Number(item.datang || 0).toLocaleString("id-ID")} / ${Number(item.minimumStock || 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</span></div>`).join("")
+      : '<p class="py-3 text-center text-xs text-emerald-700">Tidak ada stok di bawah batas minimum.</p>';
+  }
   if (!recent) return;
   const latest = arrivals.sort((a, b) => String(b.entry.recordedAt || b.entry.receivedAt || "").localeCompare(String(a.entry.recordedAt || a.entry.receivedAt || ""))).slice(0, 5);
   recent.innerHTML = latest.length ? latest.map(({ item, entry }) => {
@@ -1902,8 +1951,10 @@ window.renderAdminPwaStock = function () {
   const items = [...window.appState.inventoryItems].filter((item) => (item.nama || item.name || "").toLocaleLowerCase("id-ID").includes(query)).sort((a, b) => String(a.nama || a.name || "").localeCompare(String(b.nama || b.name || ""), "id"));
   list.innerHTML = items.length ? items.map((item) => {
     const stock = Number(item.datang || 0);
-    const state = stock > 0 ? "Tersedia" : "Kosong";
-    const color = stock > 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700";
+    const minimum = Number(item.minimumStock || 0);
+    const low = minimum > 0 && stock <= minimum;
+    const state = low ? "Perlu restok" : stock > 0 ? "Tersedia" : "Kosong";
+    const color = low ? "bg-amber-50 text-amber-700" : stock > 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700";
     return `<article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div class="flex items-center justify-between gap-3"><div class="min-w-0"><h3 class="truncate text-sm font-bold text-slate-800">${escapeHtml(item.nama || item.name || "Barang")}</h3><p class="mt-1 text-[11px] text-slate-500">${escapeHtml(item.tipe || "Umum")} Â· Kebutuhan ${Number(item.kebutuhan || 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</p></div><div class="shrink-0 text-right"><strong class="block text-sm text-slate-800">${stock.toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</strong><span class="mt-1 inline-flex rounded-full px-2 py-1 text-[9px] font-bold ${color}">${state}</span></div></div><button type="button" onclick="openStockUpdate(decodeURIComponent('${encodeURIComponent(String(item.id))}'))" class="mt-3 w-full rounded-xl bg-sky-50 px-3 py-2.5 text-xs font-bold text-sky-700 hover:bg-sky-100"><i class="fa-solid fa-pen-to-square mr-1"></i>Update Stok</button></article>`;
   }).join("") : '<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">Barang tidak ditemukan.</div>';
 };
@@ -1919,10 +1970,12 @@ window.renderAdminPwaStock = function () {
   const items = [...window.appState.inventoryItems].filter((item) => (item.nama || item.name || "").toLocaleLowerCase("id-ID").includes(query)).sort((a, b) => String(a.nama || a.name || "").localeCompare(String(b.nama || b.name || ""), "id"));
   list.innerHTML = items.length ? items.map((item) => {
     const stock = Number(item.datang || 0);
-    const state = stock > 0 ? "Tersedia" : "Kosong";
-    const color = stock > 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700";
+    const minimum = Number(item.minimumStock || 0);
+    const low = minimum > 0 && stock <= minimum;
+    const state = low ? "Perlu restok" : stock > 0 ? "Tersedia" : "Kosong";
+    const color = low ? "bg-amber-50 text-amber-700" : stock > 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700";
     const safeId = encodeURIComponent(String(item.id));
-    return `<article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div class="flex items-center justify-between gap-3"><div class="min-w-0"><h3 class="truncate text-sm font-bold text-slate-800">${escapeHtml(item.nama || item.name || "Barang")}</h3><p class="mt-1 text-[11px] text-slate-500">${escapeHtml(item.tipe || "Umum")} · ${escapeHtml(item.satuan || "unit")}</p></div><div class="shrink-0 text-right"><strong class="block text-sm text-slate-800">${stock.toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</strong><span class="mt-1 inline-flex rounded-full px-2 py-1 text-[9px] font-bold ${color}">${state}</span></div></div><button type="button" onclick="openStockUpdate(decodeURIComponent('${safeId}'))" class="mt-3 w-full rounded-xl bg-sky-50 px-3 py-2.5 text-xs font-bold text-sky-700 hover:bg-sky-100"><i class="fa-solid fa-pen-to-square mr-1"></i>Update Stok</button><button type="button" onclick="openStocktake(decodeURIComponent('${safeId}'))" class="mt-2 w-full rounded-xl bg-indigo-50 px-3 py-2.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100"><i class="fa-solid fa-clipboard-check mr-1"></i>Catat Stok Opname</button><div class="mt-2 grid grid-cols-2 gap-2"><button type="button" onclick="openStockHistory(decodeURIComponent('${safeId}'))" class="rounded-xl bg-slate-100 px-3 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-200"><i class="fa-solid fa-clock-rotate-left mr-1"></i>Riwayat</button><button type="button" onclick="promptStockDelete(decodeURIComponent('${safeId}'))" class="rounded-xl bg-rose-50 px-3 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-100"><i class="fa-solid fa-trash-can mr-1"></i>Hapus</button></div></article>`;
+    return `<article class="rounded-2xl border ${low ? "border-amber-300" : "border-slate-200"} bg-white p-4 shadow-sm"><div class="flex items-center justify-between gap-3"><div class="min-w-0"><h3 class="truncate text-sm font-bold text-slate-800">${escapeHtml(item.nama || item.name || "Barang")}</h3><p class="mt-1 text-[11px] text-slate-500">${escapeHtml(item.tipe || "Umum")} · ${escapeHtml(item.satuan || "unit")}</p>${minimum > 0 ? `<p class="mt-1 text-[10px] ${low ? "font-semibold text-amber-700" : "text-slate-400"}">Batas minimum ${minimum.toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</p>` : ""}</div><div class="shrink-0 text-right"><strong class="block text-sm text-slate-800">${stock.toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</strong><span class="mt-1 inline-flex rounded-full px-2 py-1 text-[9px] font-bold ${color}">${state}</span></div></div><button type="button" onclick="openStockUpdate(decodeURIComponent('${safeId}'))" class="mt-3 w-full rounded-xl bg-sky-50 px-3 py-2.5 text-xs font-bold text-sky-700 hover:bg-sky-100"><i class="fa-solid fa-pen-to-square mr-1"></i>Update Stok</button><button type="button" onclick="openStocktake(decodeURIComponent('${safeId}'))" class="mt-2 w-full rounded-xl bg-indigo-50 px-3 py-2.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100"><i class="fa-solid fa-clipboard-check mr-1"></i>Catat Stok Opname</button><div class="mt-2 grid grid-cols-2 gap-2"><button type="button" onclick="openStockHistory(decodeURIComponent('${safeId}'))" class="rounded-xl bg-slate-100 px-3 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-200"><i class="fa-solid fa-clock-rotate-left mr-1"></i>Riwayat</button><button type="button" onclick="promptStockDelete(decodeURIComponent('${safeId}'))" class="rounded-xl bg-rose-50 px-3 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-100"><i class="fa-solid fa-trash-can mr-1"></i>Hapus</button></div></article>`;
   }).join("") : '<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">Barang tidak ditemukan.</div>';
 };
 
@@ -1947,9 +2000,10 @@ window.submitAdminPwaAddStockItem = async function (event) {
     tipe: document.getElementById("adminPwaNewItemType").value,
     satuan: unit,
     datang: Number(document.getElementById("adminPwaNewItemOpeningStock").value || 0),
+    minimumStock: Number(document.getElementById("adminPwaNewItemMinimum").value || 0),
     stockHistory: [],
   };
-  if (!item.nama || !item.satuan || item.datang < 0) return;
+  if (!item.nama || !item.satuan || item.datang < 0 || item.minimumStock < 0) return;
   if (window.appState.inventoryItems.some((entry) => String(entry.id) === id)) return showToast("Barang dan satuan tersebut sudah ada di daftar stok", "info");
   if (item.datang > 0) item.stockHistory.push({ type: "masuk", quantity: item.datang, stockBefore: 0, stockAfter: item.datang, date: document.getElementById("adminPwaNewItemDate").value, note: "Saldo awal", createdAt: new Date().toISOString() });
   setButtonLoading(button, true, "Menyimpan...");
@@ -2249,11 +2303,13 @@ window.renderStockTable = function () {
     total: items.length,
     available: items.filter((item) => stockState(item) === "available").length,
     empty: items.filter((item) => stockState(item) === "empty").length,
+    low: getLowStockInventoryItems(items).length,
   };
   summary.innerHTML = `
     <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm"><p class="text-xs font-bold uppercase tracking-wider text-slate-400">Jenis Barang</p><p class="text-2xl font-extrabold text-slate-800 mt-2">${counts.total.toLocaleString("id-ID")}</p><p class="text-[11px] text-slate-500 mt-1">Total barang terdaftar</p></div>
     <div class="bg-white p-5 rounded-2xl border border-emerald-200 shadow-sm"><p class="text-xs font-bold uppercase tracking-wider text-slate-400">Stok Tersedia</p><p class="text-2xl font-extrabold text-emerald-600 mt-2">${counts.available.toLocaleString("id-ID")}</p><p class="text-[11px] text-slate-500 mt-1">Barang dengan saldo lebih dari nol</p></div>
     <div class="bg-white p-5 rounded-2xl border border-red-200 shadow-sm"><p class="text-xs font-bold uppercase tracking-wider text-slate-400">Stok Kosong</p><p class="text-2xl font-extrabold text-red-600 mt-2">${counts.empty.toLocaleString("id-ID")}</p><p class="text-[11px] text-slate-500 mt-1">Barang tanpa saldo stok</p></div>
+    <div class="bg-white p-5 rounded-2xl border border-amber-200 shadow-sm"><p class="text-xs font-bold uppercase tracking-wider text-slate-400">Perlu Restok</p><p class="text-2xl font-extrabold text-amber-600 mt-2">${counts.low.toLocaleString("id-ID")}</p><p class="text-[11px] text-slate-500 mt-1">Saldo menyentuh batas minimum</p></div>
   `;
 
   const query = (document.getElementById("stockSearch")?.value || "")
@@ -2265,7 +2321,8 @@ window.renderStockTable = function () {
       .toLowerCase()
       .includes(query);
     const state = stockState(item);
-    return matchesName && (filter === "all" || filter === state);
+    const isLow = Number(item.minimumStock || 0) > 0 && Number(item.datang || 0) <= Number(item.minimumStock || 0);
+    return matchesName && (filter === "all" || filter === state || (filter === "low" && isLow));
   });
 
   if (!filtered.length) {
@@ -2277,9 +2334,11 @@ window.renderStockTable = function () {
     .map((item) => {
       const arrived = Number(item.datang) || 0;
       const state = stockState(item);
-      const stateLabel = state === "empty" ? "Kosong" : "Tersedia";
-      const stateStyle = state === "empty" ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700";
-      return `<tr class="hover:bg-slate-50/80"><td class="py-3.5 px-5"><p class="font-bold text-slate-800">${escapeHtml(item.nama || item.name || "-")}</p><p class="text-[10px] text-slate-400 mt-1">ID: ${escapeHtml(item.id)}</p></td><td class="py-3.5 px-5">${escapeHtml(item.tipe || "Utama")}</td><td class="py-3.5 px-5 text-right font-bold text-slate-800 whitespace-nowrap">${arrived.toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</td><td class="py-3.5 px-5"><span class="px-2.5 py-1 rounded-full text-[10px] font-bold ${stateStyle}">${stateLabel}</span></td><td class="py-3.5 px-5 text-right whitespace-nowrap"><button type="button" onclick="openStockUpdate('${escapeHtml(item.id)}')" class="px-2.5 py-2 bg-sky-50 text-sky-700 rounded-lg font-semibold hover:bg-sky-100" title="Catat barang masuk atau keluar"><i class="fa-solid fa-pen-to-square mr-1"></i>Update</button><button type="button" onclick="openStockHistory('${escapeHtml(item.id)}')" class="px-2.5 py-2 ml-1 bg-slate-100 text-slate-600 rounded-lg font-semibold hover:bg-slate-200" title="Lihat riwayat"><i class="fa-solid fa-clock-rotate-left mr-1"></i>Riwayat</button><button type="button" onclick="promptStockDelete('${escapeHtml(item.id)}')" class="px-2.5 py-2 ml-1 bg-red-50 text-red-600 rounded-lg font-semibold hover:bg-red-100" title="Hapus barang"><i class="fa-solid fa-trash-can"></i></button></td></tr>`;
+      const minimum = Number(item.minimumStock || 0);
+      const low = minimum > 0 && arrived <= minimum;
+      const stateLabel = low ? "Perlu restok" : state === "empty" ? "Kosong" : "Tersedia";
+      const stateStyle = low ? "bg-amber-100 text-amber-800" : state === "empty" ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700";
+      return `<tr class="hover:bg-slate-50/80 ${low ? "bg-amber-50/40" : ""}"><td class="py-3.5 px-5"><p class="font-bold text-slate-800">${escapeHtml(item.nama || item.name || "-")}</p><p class="text-[10px] text-slate-400 mt-1">ID: ${escapeHtml(item.id)}</p></td><td class="py-3.5 px-5">${escapeHtml(item.tipe || "Utama")}</td><td class="py-3.5 px-5 text-right font-bold text-slate-800 whitespace-nowrap">${arrived.toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}${minimum > 0 ? `<p class="mt-1 text-[10px] font-normal ${low ? "text-amber-700" : "text-slate-400"}">Minimum ${minimum.toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</p>` : ""}</td><td class="py-3.5 px-5"><span class="px-2.5 py-1 rounded-full text-[10px] font-bold ${stateStyle}">${stateLabel}</span></td><td class="py-3.5 px-5 text-right whitespace-nowrap"><button type="button" onclick="openStockUpdate('${escapeHtml(item.id)}')" class="px-2.5 py-2 bg-sky-50 text-sky-700 rounded-lg font-semibold hover:bg-sky-100" title="Catat barang masuk atau keluar"><i class="fa-solid fa-pen-to-square mr-1"></i>Update</button><button type="button" onclick="openStockMinimum('${escapeHtml(item.id)}')" class="px-2.5 py-2 ml-1 bg-amber-50 text-amber-700 rounded-lg font-semibold hover:bg-amber-100" title="Atur batas minimum"><i class="fa-solid fa-bell"></i></button><button type="button" onclick="openStockHistory('${escapeHtml(item.id)}')" class="px-2.5 py-2 ml-1 bg-slate-100 text-slate-600 rounded-lg font-semibold hover:bg-slate-200" title="Lihat riwayat"><i class="fa-solid fa-clock-rotate-left mr-1"></i>Riwayat</button><button type="button" onclick="promptStockDelete('${escapeHtml(item.id)}')" class="px-2.5 py-2 ml-1 bg-red-50 text-red-600 rounded-lg font-semibold hover:bg-red-100" title="Hapus barang"><i class="fa-solid fa-trash-can"></i></button></td></tr>`;
     })
     .join("");
 };
@@ -2289,6 +2348,7 @@ window.closeStockModal = function (modalId) {
 };
 
 function getSppHeaderSettings() {
+  if (window.appState?.kitchenSettings) return window.appState.kitchenSettings;
   try {
     return JSON.parse(localStorage.getItem("mbgKitchenSettings") || "{}");
   } catch {
@@ -2389,6 +2449,18 @@ window.addEventListener("mbg-kitchen-settings-updated", () => {
   renderSidebarBrandLogo();
   renderConfiguredAppIcons();
 });
+window.saveKitchenSettingsToFirebase = async function (settings) {
+  const savedSettings = {
+    ...settings,
+    updatedAt: new Date().toISOString(),
+    updatedBy: normalizeAccountEmail(window.appState.user?.email),
+  };
+  await setDoc(doc(db, "app_settings", "organization"), savedSettings, { merge: true });
+  window.appState.kitchenSettings = savedSettings;
+  try { localStorage.setItem("mbgKitchenSettings", JSON.stringify(savedSettings)); } catch {}
+  window.dispatchEvent(new Event("mbg-kitchen-settings-updated"));
+  return savedSettings;
+};
 renderSidebarBrandLogo();
 renderConfiguredAppIcons();
 
@@ -3129,8 +3201,10 @@ window.saveStockItem = async function (event) {
     tipe: document.getElementById("stockItemType").value || "Umum",
     satuan: unit,
     datang: opening,
+    minimumStock: Number(document.getElementById("stockItemMinimum").value || 0),
     stockHistory: opening > 0 ? [{ type: "masuk", quantity: opening, stockBefore: 0, stockAfter: opening, date, note: "Saldo awal", createdAt: new Date().toISOString() }] : [],
   };
+  if (!Number.isFinite(item.minimumStock) || item.minimumStock < 0) return showToast("Batas minimum harus bernilai nol atau lebih", "error");
   const button = event.submitter;
   if (window.appState.inventoryItems.some((entry) => String(entry.id) === id)) return showToast("Barang dan satuan tersebut sudah ada di daftar stok", "info");
   setButtonLoading(button, true, "Menyimpan...");
@@ -3146,6 +3220,40 @@ window.saveStockItem = async function (event) {
     showToast("Barang stok berhasil ditambahkan", "success");
   } catch (error) {
     showToast(error.message || "Barang stok gagal disimpan", "error");
+  } finally {
+    setButtonLoading(button, false);
+  }
+};
+
+window.openStockMinimum = function (itemId) {
+  const item = window.appState.inventoryItems.find((entry) => String(entry.id) === String(itemId));
+  if (!item) return;
+  document.getElementById("stockMinimumItemId").value = item.id;
+  document.getElementById("stockMinimumItemName").textContent = `${item.nama || item.name || "Barang"} · ${item.satuan || "unit"}`;
+  document.getElementById("stockMinimumValue").value = Number(item.minimumStock || 0);
+  const modal = document.getElementById("stockMinimumModal");
+  modal?.classList.remove("hidden");
+  modal?.classList.add("flex");
+};
+
+window.saveStockMinimum = async function (event) {
+  event.preventDefault();
+  const itemId = document.getElementById("stockMinimumItemId").value;
+  const item = window.appState.inventoryItems.find((entry) => String(entry.id) === String(itemId));
+  const minimumStock = Number(document.getElementById("stockMinimumValue").value);
+  if (!item || !Number.isFinite(minimumStock) || minimumStock < 0) return showToast("Isi batas minimum yang valid", "error");
+  const button = event.submitter;
+  setButtonLoading(button, true, "Menyimpan...");
+  try {
+    await setDoc(doc(db, "inventory_items", itemId), { minimumStock }, { merge: true });
+    window.appState.inventoryItems = window.appState.inventoryItems.map((entry) => String(entry.id) === String(itemId) ? { ...entry, minimumStock } : entry);
+    renderStockTable();
+    renderAdminPwaStock();
+    renderAdminPwaDashboard();
+    closeStockModal("stockMinimumModal");
+    showToast(minimumStock > 0 ? "Batas minimum stok berhasil disimpan" : "Peringatan minimum stok dinonaktifkan", "success");
+  } catch (error) {
+    showToast(error.message || "Batas minimum stok gagal disimpan", "error");
   } finally {
     setButtonLoading(button, false);
   }
@@ -3992,11 +4100,7 @@ window.removeAppUser = async function (email) {
 };
 
 function getKitchenProfile() {
-  try {
-    return JSON.parse(localStorage.getItem("mbgKitchenSettings") || "{}");
-  } catch {
-    return {};
-  }
+  return getSppHeaderSettings();
 }
 
 function getKitchenLocation() {

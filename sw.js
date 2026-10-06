@@ -1,4 +1,4 @@
-const CACHE_NAME = "mbg-pwa-v44-separated-stock-catalog";
+const CACHE_NAME = "mbg-pwa-v49-firestore-kitchen-settings";
 const APP_SHELL = [
   "./",
   "./index.html",

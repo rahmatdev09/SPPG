@@ -43,6 +43,10 @@ service cloud.firestore {
       allow create, update: if hasActiveAccount();
     }
 
+    match /app_settings/{settingId} {
+      allow read, write: if hasActiveAccount();
+    }
+
     match /suppliers/{supplierId} {
       allow read, write: if hasActiveAccount();
     }

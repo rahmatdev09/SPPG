@@ -120,7 +120,7 @@
               <label for="foundationLogoFile" class="block text-xs font-semibold text-slate-700 mb-1">Logo yayasan / SPPG</label>
               <div class="flex flex-col gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 sm:flex-row sm:items-center">
                 <img id="foundationLogoPreview" alt="Pratinjau logo untuk kop RAB" class="hidden h-20 w-28 rounded-lg border border-slate-200 bg-white object-contain p-2" />
-                <div class="min-w-0 flex-1"><input id="foundationLogoFile" type="file" accept="image/png,image/jpeg,image/webp" class="block w-full text-xs text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-sky-100 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-sky-700"/><p id="foundationLogoStatus" class="mt-2 text-[10px] text-slate-500">PNG, JPG, atau WebP. Logo dikompres dan tersimpan pada perangkat ini.</p></div>
+                <div class="min-w-0 flex-1"><input id="foundationLogoFile" type="file" accept="image/png,image/jpeg,image/webp" class="block w-full text-xs text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-sky-100 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-sky-700"/><p id="foundationLogoStatus" class="mt-2 text-[10px] text-slate-500">PNG, JPG, atau WebP. Logo dikompres sebelum disimpan ke Firebase.</p></div>
                 <button id="removeFoundationLogoBtn" type="button" class="hidden rounded-lg bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">Hapus logo</button>
               </div>
             </div>
@@ -167,6 +167,14 @@
         </form>
         <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
           <h3 class="font-bold text-slate-800">Preferensi</h3>
+          <div class="mt-5 flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
+            <div class="min-w-0">
+              <p class="text-sm font-semibold">Notifikasi aplikasi</p>
+              <p class="mt-1 text-xs text-slate-500">Periksa izin notifikasi browser dan kirim notifikasi percobaan.</p>
+              <p id="notificationPermissionStatus" class="mt-2 text-xs font-semibold text-slate-500" role="status" aria-live="polite">Memeriksa dukungan notifikasi...</p>
+            </div>
+            <button id="checkNotificationBtn" type="button" class="shrink-0 rounded-xl bg-sky-600 px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-sky-700"><i class="fa-regular fa-bell mr-1"></i>Cek notifikasi</button>
+          </div>
           <div
             class="mt-5 flex items-center justify-between border-b border-slate-100 pb-4"
           >
@@ -230,6 +238,66 @@
       const removeFoundationLogoBtn = document.getElementById("removeFoundationLogoBtn");
       let foundationLogoDataUrl = "";
 
+      const notificationPermissionStatus = document.getElementById("notificationPermissionStatus");
+      const checkNotificationBtn = document.getElementById("checkNotificationBtn");
+      function renderNotificationPermission() {
+        if (!("Notification" in window)) {
+          notificationPermissionStatus.textContent = "Browser ini tidak mendukung notifikasi.";
+          notificationPermissionStatus.className = "mt-2 text-xs font-semibold text-rose-600";
+          checkNotificationBtn.disabled = true;
+          checkNotificationBtn.classList.add("cursor-not-allowed", "opacity-50");
+          return;
+        }
+        const state = Notification.permission;
+        const labels = {
+          granted: ["Izin aktif. Klik tombol untuk menerima notifikasi percobaan.", "mt-2 text-xs font-semibold text-emerald-700"],
+          denied: ["Izin diblokir. Ubah izin notifikasi situs ini melalui pengaturan browser.", "mt-2 text-xs font-semibold text-rose-600"],
+          default: ["Izin belum diberikan. Klik tombol untuk meminta izin dan mencoba notifikasi.", "mt-2 text-xs font-semibold text-amber-700"],
+        };
+        const [label, className] = labels[state] || labels.default;
+        notificationPermissionStatus.textContent = label;
+        notificationPermissionStatus.className = className;
+      }
+
+      checkNotificationBtn.addEventListener("click", async () => {
+        if (!("Notification" in window)) return renderNotificationPermission();
+        if (!window.isSecureContext) {
+          notificationPermissionStatus.textContent = "Notifikasi memerlukan HTTPS atau localhost.";
+          notificationPermissionStatus.className = "mt-2 text-xs font-semibold text-rose-600";
+          return;
+        }
+        checkNotificationBtn.disabled = true;
+        const originalButton = checkNotificationBtn.innerHTML;
+        checkNotificationBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Memeriksa...';
+        try {
+          let permission = Notification.permission;
+          if (permission === "default") permission = await Notification.requestPermission();
+          renderNotificationPermission();
+          if (permission === "granted") {
+            const options = {
+              body: "Notifikasi aplikasi MBG berhasil diterima di perangkat ini.",
+              icon: foundationLogoDataUrl || "./assets/icon-192.svg",
+              tag: `mbg-notification-check-${Date.now()}`,
+              renotify: true,
+            };
+            if ("serviceWorker" in navigator) {
+              const registration = await navigator.serviceWorker.ready.catch(() => null);
+              if (registration?.showNotification) await registration.showNotification("Tes notifikasi MBG", options);
+              else new Notification("Tes notifikasi MBG", options);
+            } else new Notification("Tes notifikasi MBG", options);
+            notificationPermissionStatus.textContent = "Notifikasi percobaan berhasil dikirim.";
+            notificationPermissionStatus.className = "mt-2 text-xs font-semibold text-emerald-700";
+          }
+        } catch (error) {
+          notificationPermissionStatus.textContent = error.message || "Notifikasi gagal dikirim. Periksa izin situs di browser.";
+          notificationPermissionStatus.className = "mt-2 text-xs font-semibold text-rose-600";
+        } finally {
+          checkNotificationBtn.disabled = false;
+          checkNotificationBtn.innerHTML = originalButton;
+        }
+      });
+      renderNotificationPermission();
+
       function refreshKitchenMapLink() {
         const latitude = document.getElementById("kitchenLatitude").value;
         const longitude = document.getElementById("kitchenLongitude").value;
@@ -238,18 +306,34 @@
         kitchenMapLink.classList.toggle("hidden", !valid);
       }
 
-      try {
-        const savedKitchenSettings = JSON.parse(localStorage.getItem(kitchenSettingsKey) || "{}");
+      function applyKitchenSettings(savedKitchenSettings = {}) {
         kitchenFields.forEach((id) => {
-          document.getElementById(id).value = savedKitchenSettings[id] || "";
+          const field = document.getElementById(id);
+          if (field) field.value = savedKitchenSettings[id] || "";
         });
         foundationLogoDataUrl = savedKitchenSettings.foundationLogoDataUrl || "";
         if (foundationLogoDataUrl) {
           foundationLogoPreview.src = foundationLogoDataUrl;
           foundationLogoPreview.classList.remove("hidden");
           removeFoundationLogoBtn.classList.remove("hidden");
-          foundationLogoStatus.textContent = "Logo tersimpan dan akan dicetak pada kop RAB.";
+          foundationLogoStatus.textContent = "Logo tersimpan di Firebase dan akan dicetak pada kop RAB.";
+        } else {
+          foundationLogoPreview.removeAttribute("src");
+          foundationLogoPreview.classList.add("hidden");
+          removeFoundationLogoBtn.classList.add("hidden");
+          foundationLogoStatus.textContent = "PNG, JPG, atau WebP. Logo dikompres sebelum disimpan ke Firebase.";
         }
+        refreshKitchenMapLink();
+      }
+
+      window.addEventListener("mbg-kitchen-settings-updated", () => {
+        const settings = window.appState?.kitchenSettings;
+        if (settings) applyKitchenSettings(settings);
+      });
+
+      try {
+        const savedKitchenSettings = JSON.parse(localStorage.getItem(kitchenSettingsKey) || "{}");
+        applyKitchenSettings(savedKitchenSettings);
       } catch {}
       refreshKitchenMapLink();
       ["kitchenLatitude", "kitchenLongitude"].forEach((id) => document.getElementById(id).addEventListener("input", refreshKitchenMapLink));
@@ -306,7 +390,7 @@
         foundationLogoStatus.className = "mt-2 text-[10px] text-slate-500";
       });
 
-      document.getElementById("kitchenSettingsForm").addEventListener("submit", (event) => {
+      document.getElementById("kitchenSettingsForm").addEventListener("submit", async (event) => {
         event.preventDefault();
         const latitude = document.getElementById("kitchenLatitude").value;
         const longitude = document.getElementById("kitchenLongitude").value;
@@ -323,13 +407,13 @@
         const settings = Object.fromEntries(kitchenFields.map((id) => [id, document.getElementById(id).value.trim()]));
         settings.foundationLogoDataUrl = foundationLogoDataUrl;
         try {
-          localStorage.setItem(kitchenSettingsKey, JSON.stringify(settings));
-          window.dispatchEvent(new Event("mbg-kitchen-settings-updated"));
+          if (typeof window.saveKitchenSettingsToFirebase !== "function") throw new Error("Firebase belum siap. Muat ulang halaman lalu coba lagi.");
+          await window.saveKitchenSettingsToFirebase(settings);
           kitchenSettingsMessage.textContent = "Pengaturan dapur berhasil disimpan.";
           kitchenSettingsMessage.className = "text-xs text-emerald-700";
           refreshKitchenMapLink();
-        } catch {
-          kitchenSettingsMessage.textContent = "Pengaturan tidak dapat disimpan di browser ini.";
+        } catch (error) {
+          kitchenSettingsMessage.textContent = error.message || "Pengaturan gagal disimpan ke Firebase.";
           kitchenSettingsMessage.className = "text-xs text-red-600";
         }
       });
