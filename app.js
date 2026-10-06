@@ -43,6 +43,12 @@ window.appState = {
   barangOperasional: [],
   barangOperasionalLoaded: false,
   barangOperasionalError: "",
+  masterBarang: [],
+  masterBarangLoaded: false,
+  masterBarangError: "",
+  masterBarangPage: 1,
+  masterBarangPageSize: 10,
+  masterBarangFilterKey: "",
   inventoryItems: [],
   inventoryLoaded: false,
   kitchenSettings: null,
@@ -105,6 +111,10 @@ const USER_ROLES = {
 
 function isOperationalPage() {
   return new URLSearchParams(location.search).get("jenis") === "operasional";
+}
+
+function isMasterBarangPage() {
+  return (location.pathname.split("/").pop() || "") === "master-barang.html";
 }
 
 function getCurrentBarangItems() {
@@ -199,12 +209,26 @@ function updateRoleNavigation() {
     if (barangLink?.parentElement === nav) barangLink.after(link);
     else nav.appendChild(link);
   }
+  if (nav && !nav.querySelector("#nav-master-barang")) {
+    const link = document.createElement("a");
+    link.id = "nav-master-barang";
+    link.href = "./master-barang.html";
+    link.className =
+      "nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200";
+    link.innerHTML =
+      '<i class="fa-solid fa-list-check w-5 text-center"></i><span>Master Barang</span>';
+    const after = nav.querySelector("#nav-operasional");
+    if (after?.parentElement === nav) after.after(link);
+    else nav.appendChild(link);
+  }
   const barangLink = nav?.querySelector('#nav-barang, a[href="./barang.html"]');
   const operationalLink = nav?.querySelector("#nav-operasional");
+  const masterBarangLink = nav?.querySelector("#nav-master-barang");
   const currentPage = location.pathname.split("/").pop() || "index.html";
   [
     [barangLink, currentPage === "barang.html" && !isOperationalPage()],
     [operationalLink, isOperationalPage()],
+    [masterBarangLink, isMasterBarangPage()],
   ].forEach(([link, active]) => {
     if (!link) return;
     link.classList.toggle("bg-sky-600", active);
@@ -1089,6 +1113,7 @@ function setupFirestoreListeners() {
   window.appState.pmsLoaded = false;
   window.appState.menusLoaded = false;
   window.appState.sppLettersLoaded = false;
+  renderMasterBarangTable();
   renderBarangTable();
   renderSupplierTable();
   renderPMCards();
@@ -1096,6 +1121,34 @@ function setupFirestoreListeners() {
   renderAdminPwaDashboard();
   renderAdminPwaStock();
   renderSppLetters();
+  if (isMasterBarangPage() || document.getElementById("formBarang")) {
+    window.appState.masterBarangLoaded = false;
+    window.appState.masterBarangError = "";
+    onSnapshot(
+      collection(db, "master_items"),
+      (snapshot) => {
+        window.appState.masterBarang = snapshot.docs.map((itemDoc) => ({
+          id: itemDoc.id,
+          ...itemDoc.data(),
+        }));
+        window.appState.masterBarangLoaded = true;
+        window.appState.masterBarangError = "";
+        renderMasterBarangTable();
+        window.refreshMasterBarangOptions?.();
+      },
+      (error) => {
+        console.warn("Master barang listener warning:", error);
+        window.appState.masterBarang = [];
+        window.appState.masterBarangLoaded = true;
+        window.appState.masterBarangError =
+          error.code === "permission-denied"
+            ? "Akses ditolak. Publikasikan Firestore Rules untuk koleksi master_items."
+            : "Master barang gagal dimuat. Periksa koneksi lalu muat ulang halaman.";
+        renderMasterBarangTable();
+        window.refreshMasterBarangOptions?.();
+      },
+    );
+  }
   onSnapshot(
     doc(db, "app_settings", "organization"),
     async (snapshot) => {
@@ -1182,7 +1235,11 @@ function setupFirestoreListeners() {
     },
   );
 
-  if (isOperationalPage() || document.getElementById("adminArrivalList")) {
+  if (
+    isOperationalPage() ||
+    document.getElementById("adminArrivalList") ||
+    document.getElementById("sppSupplierRows")
+  ) {
     window.appState.barangOperasionalLoaded = false;
     window.appState.barangOperasionalError = "";
     onSnapshot(
@@ -1196,6 +1253,10 @@ function setupFirestoreListeners() {
         window.appState.barangOperasionalError = "";
         renderBarangTable();
         renderAdminArrivalPage();
+        window.refreshSppDatabaseOptions?.();
+        const sppFormModal = document.getElementById("sppFormModal");
+        if (sppFormModal && !sppFormModal.classList.contains("hidden"))
+          window.loadSppDatabaseProductPhotos?.();
       },
       (error) => {
         console.warn("Operational items listener warning:", error);
@@ -1207,6 +1268,7 @@ function setupFirestoreListeners() {
             : "Data operasional gagal dimuat. Periksa koneksi lalu muat ulang halaman.";
         renderBarangTable();
         renderAdminArrivalPage();
+        window.refreshSppDatabaseOptions?.();
       },
     );
   }
@@ -3355,28 +3417,78 @@ function formatLetterDate(value) {
       });
 }
 
+function getSppItemCategory() {
+  return document.getElementById("sppItemCategory")?.value === "operasional"
+    ? "operasional"
+    : "bahan_baku";
+}
+
+function getSppItems(category = getSppItemCategory()) {
+  return category === "operasional"
+    ? window.appState.barangOperasional || []
+    : window.appState.barang || [];
+}
+
+function areSppItemsLoaded(category = getSppItemCategory()) {
+  return category === "operasional"
+    ? window.appState.barangOperasionalLoaded
+    : window.appState.barangLoaded;
+}
+
+window.setSppItemCategory = function (category) {
+  if (!["bahan_baku", "operasional"].includes(category)) return;
+  const categorySelect = document.getElementById("sppItemCategory");
+  if (categorySelect) categorySelect.value = category;
+  document.querySelectorAll("#sppSupplierRows tr").forEach((row) => {
+    const itemSelect = row.querySelector(".spp-item-select");
+    if (itemSelect) itemSelect.value = "";
+    [
+      ".spp-item-name",
+      ".spp-item-quantity",
+      ".spp-item-unit",
+      ".spp-item-price",
+      ".spp-item-amount",
+    ].forEach((selector) => {
+      const input = row.querySelector(selector);
+      if (input) input.value = "";
+    });
+    const unitLabel = row.querySelector(".spp-item-unit-label");
+    if (unitLabel) unitLabel.textContent = "";
+  });
+  window.refreshSppDatabaseOptions();
+  window.loadSppDatabaseProductPhotos();
+  window.updateSppPaymentTotal();
+};
+
 window.refreshSppDatabaseOptions = function (row = null) {
   const suppliers = window.appState.suppliers || [];
   const rows = row
     ? [row.matches?.("tr") ? row : row.closest?.("tr")].filter(Boolean)
     : [...(document.querySelectorAll("#sppSupplierRows tr") || [])];
   const safeOption = (value) => escapeHtml(String(value ?? ""));
+  const category = getSppItemCategory();
+  const categoryLabel =
+    category === "operasional" ? "operasional" : "bahan baku";
+  const sourceItems = getSppItems(category);
+  const sourceLoaded = areSppItemsLoaded(category);
   rows.forEach((entry) => {
     const itemDate = entry.querySelector(".spp-item-date")?.value || "";
-    const items = (window.appState.barang || []).filter(
+    const items = sourceItems.filter(
       (item) => itemDate && String(item.tanggal || "") === itemDate,
     );
     const itemSelect = entry.querySelector(".spp-item-select");
     const supplierSelect = entry.querySelector(".spp-item-supplier-select");
     if (itemSelect) {
       const selectedId = itemSelect.value;
-      const placeholder = !window.appState.barangLoaded
-        ? "Memuat barang dari database..."
-        : !itemDate
-          ? "Pilih tanggal barang terlebih dahulu"
-          : !items.length
-            ? "Tidak ada barang pada tanggal ini"
-            : "Pilih barang";
+      const placeholder = !sourceLoaded
+        ? `Memuat barang ${categoryLabel}...`
+        : category === "operasional" && window.appState.barangOperasionalError
+          ? "Akses data operasional ditolak"
+          : !itemDate
+            ? "Pilih tanggal barang terlebih dahulu"
+            : !items.length
+              ? `Tidak ada barang ${categoryLabel} pada tanggal ini`
+              : "Pilih barang";
       itemSelect.innerHTML = `<option value="">${placeholder}</option>${items.map((item) => `<option value="${safeOption(item.id)}">${safeOption(item.nama || item.name || "Barang")} Â· ${safeOption(item.satuan || "")}</option>`).join("")}`;
       if (items.some((item) => String(item.id) === selectedId))
         itemSelect.value = selectedId;
@@ -3401,7 +3513,7 @@ window.refreshSppDatabaseOptions = function (row = null) {
 
 window.selectSppDatabaseItem = function (select) {
   const row = select.closest("tr");
-  const item = (window.appState.barang || []).find(
+  const item = getSppItems().find(
     (entry) => String(entry.id) === String(select.value),
   );
   const nameInput = row?.querySelector(".spp-item-name");
@@ -3550,19 +3662,27 @@ window.setSppItemDate = function (input) {
 };
 
 window.addAllSppItemsForDate = function (button) {
+  const category = getSppItemCategory();
+  const categoryLabel =
+    category === "operasional" ? "operasional" : "bahan baku";
   const sourceRow = button.closest("tr");
   const date =
     document.getElementById("sppBulkItemDate")?.value ||
     sourceRow?.querySelector(".spp-item-date")?.value ||
     "";
   if (!date) return showToast("Pilih tanggal barang terlebih dahulu", "error");
-  if (!window.appState.barangLoaded)
-    return showToast("Data barang masih dimuat", "info");
-  const items = (window.appState.barang || []).filter(
+  if (!areSppItemsLoaded(category))
+    return showToast(`Data barang ${categoryLabel} masih dimuat`, "info");
+  if (category === "operasional" && window.appState.barangOperasionalError)
+    return showToast(window.appState.barangOperasionalError, "error");
+  const items = getSppItems(category).filter(
     (item) => String(item.tanggal || "") === date,
   );
   if (!items.length)
-    return showToast("Tidak ada barang pada tanggal tersebut", "info");
+    return showToast(
+      `Tidak ada barang ${categoryLabel} pada tanggal tersebut`,
+      "info",
+    );
 
   const existingRows = [...document.querySelectorAll("#sppSupplierRows tr")];
   const alreadyAdded = new Set(
@@ -3605,7 +3725,7 @@ window.addAllSppItemsForDate = function (button) {
   });
   window.updateSppPaymentTotal();
   showToast(
-    `${pendingItems.length} barang berhasil ditambahkan. Pilih supplier untuk setiap barang.`,
+    `${pendingItems.length} barang ${categoryLabel} berhasil ditambahkan. Pilih supplier untuk setiap barang.`,
     "success",
   );
 };
@@ -3771,7 +3891,18 @@ window.loadSppDatabaseProductPhotos = async function () {
     return;
   }
 
-  const items = (window.appState?.barang || []).filter((item) => {
+  const category = getSppItemCategory();
+  const categoryLabel =
+    category === "operasional" ? "operasional" : "bahan baku";
+  if (!areSppItemsLoaded(category)) {
+    status.textContent = `Memuat barang ${categoryLabel} dari database...`;
+    return;
+  }
+  if (category === "operasional" && window.appState.barangOperasionalError) {
+    status.textContent = window.appState.barangOperasionalError;
+    return;
+  }
+  const items = getSppItems(category).filter((item) => {
     const matchingArrival = (
       Array.isArray(item.arrivalHistory) ? item.arrivalHistory : []
     ).some(
@@ -3862,7 +3993,7 @@ window.loadSppDatabaseProductPhotos = async function () {
   if (!sppDatabaseProductPhotos.length) {
     status.textContent = items.length
       ? "Tidak ada foto penerimaan tersimpan untuk tanggal ini."
-      : "Tidak ada barang di database pada tanggal ini.";
+      : `Tidak ada barang ${categoryLabel} di database pada tanggal ini.`;
     return;
   }
   status.textContent = `${sppDatabaseProductPhotos.length} foto barang ditemukan. Pilih foto, lalu tambahkan ke lembar layout yang aktif.`;
@@ -4022,9 +4153,16 @@ function showSppPreview(data, isSample = false) {
   const html = `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:0;background:#e8edf2;color:#111;font:10px/1.45 Arial,sans-serif}.page{position:relative;width:210mm;min-height:297mm;margin:16px auto;padding:18mm 19mm;background:#fff;box-shadow:0 4px 20px #0002}.page-two{page-break-before:always}.kop{display:flex;align-items:center;justify-content:center;gap:12px;text-align:center;border-bottom:3px double #111;padding:0 0 9px}.logo{width:62px;height:62px;object-fit:contain;flex:none}.koptext{flex:1}.foundation{font-size:12px;font-weight:bold;text-transform:uppercase}.kitchen{font-size:12px;font-weight:bold;text-transform:uppercase;margin-top:2px}.address,.contact{font-size:9px}.doc-title{text-align:center;font-weight:bold;margin:10px 0 14px;font-size:11px}.letter-number{margin:-8px 0 9px;text-align:center;font-size:9px}.properties{margin:0 0 2px}.recipient{margin:0 0 12px}.intro{margin:0 0 8px;text-align:justify}.summary-title{margin:10px auto 0;width:68%;border:1px solid #111;background:#dbe7f8;text-align:center;font-weight:bold;padding:3px}.summary-subtitle{margin:0 auto;width:68%;border:1px solid #111;border-top:0;background:#dbe7f8;text-align:center;font-weight:bold;padding:3px}.summary-date{margin:0 auto 8px;width:68%;border:1px solid #111;border-top:0;background:#dbe7f8;text-align:center;padding:3px}table{width:100%;border-collapse:collapse;font-size:8px;table-layout:fixed}th,td{border:1px solid #111;padding:5px 4px;overflow-wrap:anywhere;vertical-align:middle}th{background:#c9ddf2;text-align:center;font-weight:bold}.number{text-align:right;white-space:nowrap}.center{text-align:center}.sumrow td{background:#dbe7f8}.closing{margin:12px 0 0;text-align:justify}.date{text-align:right;margin:8px 0}.signature-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:center;margin-top:12px;font-size:9px}.signature{min-height:86px}.signature .gap{height:42px}.sign-name{font-weight:bold;text-decoration:underline}.head-sign{text-align:center;margin:4px auto 0;width:50%;font-size:9px}.head-sign .gap{height:44px}.page-heading{text-align:center;font-weight:bold;font-size:11px;margin:0 0 14px}.attachments{display:block}.attachment-sheet{break-inside:avoid;page-break-inside:avoid;min-height:238mm;padding:3mm 0}.attachment-sheet+.attachment-sheet{break-before:page;page-break-before:always}.attachment-sheet h3{text-align:center;font-size:11px;margin:0 0 8mm}.product-photo-grid{display:grid;gap:6mm;align-content:start}.product-photo-grid.layout-1,.product-photo-grid.layout-2{grid-template-columns:1fr}.product-photo-grid.layout-3,.product-photo-grid.layout-4{grid-template-columns:repeat(2,minmax(0,1fr))}.product-photo-grid.layout-5,.product-photo-grid.layout-6{grid-template-columns:repeat(3,minmax(0,1fr))}.product-photo-grid figure,.invoice-sheet figure{min-width:0;margin:0;border:1px solid #cbd5e1;padding:3mm;break-inside:avoid}.product-photo-grid img{display:block;width:100%;object-fit:contain}.product-photo-grid.layout-1 img{height:215mm}.product-photo-grid.layout-2 img{height:103mm}.product-photo-grid.layout-3 img,.product-photo-grid.layout-4 img{height:96mm}.product-photo-grid.layout-5 img,.product-photo-grid.layout-6 img{height:74mm}.invoice-sheet figure{height:232mm;display:flex;flex-direction:column;align-items:center;justify-content:center}.invoice-sheet img{display:block;width:100%;height:218mm;object-fit:contain}.attachment-sheet figcaption{margin-top:2mm;text-align:center;font-size:9px;overflow-wrap:anywhere}.empty-attachments{text-align:center;margin-top:30px;color:#666}.sample{position:absolute;right:19mm;top:6mm;font-size:8px;color:#94a3b8}@page{size:A4;margin:0}@media print{body{background:#fff}.page{width:210mm;min-height:297mm;margin:0;padding:18mm 19mm;box-shadow:none;page-break-after:always}.page:last-child{page-break-after:auto}.page-two.empty{display:none}.sample{display:none}}</style></head><body><main class="page">${isSample ? '<span class="sample">CONTOH TEMPLATE</span>' : ""}<header class="kop">${logoUrl ? `<img class="logo" src="${safe(logoUrl)}" alt="Logo">` : ""}<div class="koptext"><div class="foundation">${foundation}</div><div class="kitchen">${kitchen}</div><div class="address">${address}</div>${phone ? `<div class="contact">Telp. ${phone}</div>` : ""}</div></header><div class="doc-title">SURAT PERMINTAAN PEMBAYARAN</div><div class="letter-number">Nomor: ${safe(data.number)}</div><div class="properties">Sifat : ${safe(data.urgency)}<br>Perihal : ${safe(data.category)}</div><div class="recipient">Kepada Yth.<br><b>${safe(data.recipient)}</b>${recipientAddress ? `<br>${recipientAddress}` : ""}<br>Di Tempat</div><p class="intro">Sehubungan dengan pelaksanaan kegiatan Makan Bergizi Gratis tanggal ${safe(formatLetterDate(data.date))} di SPPG ${kitchen}, ${address}, maka kami mengajukan permintaan pembayaran dana belanja (kategori: ${safe(data.category)}). Biaya kepada pihak supplier sebagaimana rincian berikut:</p><div class="summary-title">REKAP BIAYA ${safe(data.category).toLocaleUpperCase("id-ID")}</div><div class="summary-subtitle">${kitchen.toLocaleUpperCase("id-ID")}</div><div class="summary-date">TANGGAL (${safe(formatLetterDate(data.date))})</div><table><thead><tr><th style="width:5%">NO</th><th style="width:18%">NAMA BARANG</th><th style="width:8%">QTY</th><th style="width:8%">SATUAN</th><th style="width:12%">HARGA SATUAN</th><th style="width:14%">TOTAL</th><th style="width:14%">NOMOR REKENING</th><th style="width:8%">NAMA BANK</th><th style="width:13%">NAMA SUPPLIER</th></tr></thead><tbody>${supplierRows}${totalRow}</tbody></table><p class="intro">Total pembayaran sebesar <b>Rp ${total.toLocaleString("id-ID")}</b> (<i>${safe(terbilangRupiah(total))}</i>). ${purpose}</p><p class="closing">Demikian surat permintaan pembayaran ini kami buat dan ajukan untuk digunakan sebagaimana mestinya. Atas perhatiannya kami ucapkan terima kasih.</p><p class="date">${place}, ${safe(formatLetterDate(data.date))}</p><div class="signature-grid"><div class="signature">Mengetahui,<br>PIC SPPG ${kitchen}<div class="gap"></div><div class="sign-name">${safe(data.picName)}</div></div><div class="signature">Akuntan SPPG ${kitchen}<div class="gap"></div><div class="sign-name">${safe(data.accountantName)}</div></div></div><div class="head-sign">Kepala SPPG ${kitchen}<div class="gap"></div><div class="sign-name">${safe(data.headName)}</div></div></main><section class="page page-two${hasAttachments ? "" : " empty"}"><div class="attachments">${attachmentsHtml}</div></section></body></html>`;
   const frame = document.getElementById("sppPreviewFrame");
   if (!frame) return;
-  frame.srcdoc = html.replace(
-    "</head>",
-    `<style>
+  const itemCategoryLabel =
+    data.itemCategory === "operasional" ? "Operasional" : "Bahan Baku";
+  frame.srcdoc = html
+    .replace(
+      `Perihal : ${safe(data.category)}`,
+      `Jenis barang : ${itemCategoryLabel}<br>Perihal : ${safe(data.category)}`,
+    )
+    .replace(
+      "</head>",
+      `<style>
     .summary-title,.summary-subtitle,.summary-date{width:100%;margin-left:0;margin-right:0}
     .attachment-sheet{height:auto;min-height:0;padding:0;overflow:visible;display:block;break-inside:avoid;page-break-inside:avoid}
     .attachment-sheet h3{margin:0 0 2mm;font-size:8px;line-height:1}
@@ -4052,7 +4190,7 @@ function showSppPreview(data, isSample = false) {
     .invoice-sheet figcaption{margin-top:1mm;font-size:7px;line-height:1.1;max-width:100%;overflow-wrap:anywhere}
     @media print{.attachment-sheet+.attachment-sheet{break-before:page;page-break-before:always}}
   </style></head>`,
-  );
+    );
   document.getElementById("sppPreviewTitle").textContent = isSample
     ? "Contoh Template Surat Permintaan Pembayaran"
     : "Pratinjau Surat Permintaan Pembayaran";
@@ -4082,6 +4220,7 @@ window.openSppForm = function () {
   document.getElementById("sppInvoicePhotoFiles").value = "";
   renderSppAttachmentPreviews();
   document.getElementById("sppSupplierRows").innerHTML = "";
+  window.setSppItemCategory("bahan_baku");
   document.getElementById("sppLetterDate").value = today;
   document.getElementById("sppBulkItemDate").value = today;
   window.addSppSupplierRow();
@@ -4108,6 +4247,9 @@ window.editSavedSppLetter = function (letterId) {
   if (!letter) return showToast("Surat tidak ditemukan", "error");
 
   window.openSppForm();
+  window.setSppItemCategory(
+    letter.itemCategory === "operasional" ? "operasional" : "bahan_baku",
+  );
   sppEditingLetterId = String(letter.id);
   document.getElementById("sppLetterId").value = sppEditingLetterId;
   document.getElementById("sppFormTitle").textContent =
@@ -4220,6 +4362,7 @@ window.generateSppLetter = function (event) {
   const data = {
     number: document.getElementById("sppLetterNumber").value.trim(),
     date: document.getElementById("sppLetterDate").value,
+    itemCategory: getSppItemCategory(),
     urgency: document.getElementById("sppUrgency").value,
     recipient: document.getElementById("sppRecipient").value.trim(),
     recipientAddress: document
@@ -6654,9 +6797,258 @@ function escapeHtml(value) {
   );
 }
 
+function renderMasterBarangTable() {
+  const tbody = document.getElementById("masterBarangTableBody");
+  if (!tbody) return;
+  const pagination = document.getElementById("masterBarangPagination");
+  if (!window.appState.masterBarangLoaded) {
+    tbody.innerHTML = `<tr><td colspan="5" class="px-5 py-10 text-center text-sky-700"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Memuat master barang...</td></tr>`;
+    if (pagination) pagination.innerHTML = "";
+    return;
+  }
+  if (window.appState.masterBarangError) {
+    tbody.innerHTML = `<tr><td colspan="5" class="px-5 py-8 text-center text-amber-800">${escapeHtml(window.appState.masterBarangError)}</td></tr>`;
+    if (pagination) pagination.innerHTML = "";
+    return;
+  }
+  const query = (document.getElementById("masterBarangSearch")?.value || "")
+    .trim()
+    .toLocaleLowerCase("id-ID");
+  const category =
+    document.getElementById("masterBarangFilterCategory")?.value || "ALL";
+  const filterKey = `${category}|${query}`;
+  if (window.appState.masterBarangFilterKey !== filterKey) {
+    window.appState.masterBarangFilterKey = filterKey;
+    window.appState.masterBarangPage = 1;
+  }
+  const items = (window.appState.masterBarang || [])
+    .filter((item) => category === "ALL" || item.kategori === category)
+    .filter((item) =>
+      `${item.nama || ""} ${item.satuan || ""}`
+        .toLocaleLowerCase("id-ID")
+        .includes(query),
+    )
+    .sort((a, b) =>
+      String(a.nama || "").localeCompare(String(b.nama || ""), "id"),
+    );
+  if (!items.length) {
+    tbody.innerHTML = `<tr><td colspan="5" class="px-5 py-8 text-center text-slate-400">${query ? "Master barang tidak ditemukan." : "Belum ada master barang. Tambahkan barang untuk digunakan pada form barang."}</td></tr>`;
+    if (pagination) pagination.innerHTML = "";
+    return;
+  }
+  const pageSize = Number(window.appState.masterBarangPageSize) || 10;
+  const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
+  window.appState.masterBarangPage = Math.min(
+    pageCount,
+    Math.max(1, Number(window.appState.masterBarangPage) || 1),
+  );
+  const pageStart = (window.appState.masterBarangPage - 1) * pageSize;
+  const visibleItems = items.slice(pageStart, pageStart + pageSize);
+  tbody.innerHTML = visibleItems
+    .map((item) => {
+      const id = encodeURIComponent(String(item.id));
+      const categoryLabel =
+        item.kategori === "operasional" ? "Operasional" : "Bahan Baku";
+      const updatedAt = item.updatedAt
+        ? new Date(item.updatedAt).toLocaleDateString("id-ID")
+        : "-";
+      return `<tr class="hover:bg-slate-50"><td class="px-5 py-4 font-bold text-slate-800">${escapeHtml(item.nama || "-")}</td><td class="px-5 py-4"><span class="rounded-full ${item.kategori === "operasional" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"} px-2.5 py-1 text-[10px] font-bold">${categoryLabel}</span></td><td class="px-5 py-4">${escapeHtml(item.satuan || "-")}</td><td class="px-5 py-4">${escapeHtml(updatedAt)}</td><td class="px-5 py-4 text-right"><button type="button" onclick="editMasterBarang(decodeURIComponent('${id}'))" class="rounded-lg p-2 text-sky-700 hover:bg-sky-50" title="Edit master"><i class="fa-solid fa-pen-to-square"></i></button><button type="button" onclick="deleteMasterBarang(decodeURIComponent('${id}'))" class="rounded-lg p-2 text-rose-600 hover:bg-rose-50" title="Hapus master"><i class="fa-solid fa-trash-can"></i></button></td></tr>`;
+    })
+    .join("");
+  if (pagination) {
+    const firstItem = pageStart + 1;
+    const lastItem = Math.min(pageStart + pageSize, items.length);
+    pagination.innerHTML = `<div class="text-xs text-slate-500">Menampilkan ${firstItem}-${lastItem} dari ${items.length} master</div><div class="flex items-center gap-2"><label class="flex items-center gap-2 text-xs text-slate-500">Baris<select onchange="changeMasterBarangPageSize(this.value)" class="rounded-lg border border-slate-200 bg-white px-2 py-1.5"><option value="10" ${pageSize === 10 ? "selected" : ""}>10</option><option value="25" ${pageSize === 25 ? "selected" : ""}>25</option><option value="50" ${pageSize === 50 ? "selected" : ""}>50</option></select></label><button type="button" onclick="changeMasterBarangPage(-1)" ${window.appState.masterBarangPage <= 1 ? "disabled" : ""} aria-label="Halaman sebelumnya" class="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"><i class="fa-solid fa-chevron-left"></i></button><span class="min-w-20 text-center text-xs font-semibold text-slate-600">${window.appState.masterBarangPage} / ${pageCount}</span><button type="button" onclick="changeMasterBarangPage(1)" ${window.appState.masterBarangPage >= pageCount ? "disabled" : ""} aria-label="Halaman berikutnya" class="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"><i class="fa-solid fa-chevron-right"></i></button></div>`;
+  }
+}
+
+window.renderMasterBarangTable = renderMasterBarangTable;
+
+window.changeMasterBarangPage = function (direction) {
+  window.appState.masterBarangPage = Math.max(
+    1,
+    (Number(window.appState.masterBarangPage) || 1) + Number(direction),
+  );
+  renderMasterBarangTable();
+};
+
+window.changeMasterBarangPageSize = function (value) {
+  window.appState.masterBarangPageSize = Number(value) || 10;
+  window.appState.masterBarangPage = 1;
+  renderMasterBarangTable();
+};
+
+window.openMasterBarangModal = function (id = "") {
+  const form = document.getElementById("masterBarangForm");
+  if (!form) return;
+  form.reset();
+  document.getElementById("masterBarangId").value = id;
+  const item = window.appState.masterBarang.find(
+    (entry) => String(entry.id) === String(id),
+  );
+  document.getElementById("masterBarangCategory").value =
+    item?.kategori || "bahan_baku";
+  document.getElementById("masterBarangName").value = item?.nama || "";
+  document.getElementById("masterBarangUnit").value = item?.satuan || "";
+  document.getElementById("masterBarangModalTitle").textContent = id
+    ? "Edit Master Barang"
+    : "Tambah Master Barang";
+  document.getElementById("masterBarangModal").classList.remove("hidden");
+  document.getElementById("masterBarangModal").classList.add("flex");
+};
+
+window.editMasterBarang = function (id) {
+  window.openMasterBarangModal(id);
+};
+
+window.closeMasterBarangModal = function () {
+  document.getElementById("masterBarangModal")?.classList.add("hidden");
+  document.getElementById("masterBarangModal")?.classList.remove("flex");
+};
+
+window.saveMasterBarang = async function (event) {
+  event.preventDefault();
+  const id =
+    document.getElementById("masterBarangId").value || `master_${Date.now()}`;
+  const category = document.getElementById("masterBarangCategory").value;
+  const name = document.getElementById("masterBarangName").value.trim();
+  const unit = document.getElementById("masterBarangUnit").value.trim();
+  const duplicate = window.appState.masterBarang.some(
+    (item) =>
+      String(item.id) !== id &&
+      item.kategori === category &&
+      String(item.nama || "")
+        .trim()
+        .toLocaleLowerCase("id-ID") === name.toLocaleLowerCase("id-ID"),
+  );
+  if (duplicate)
+    return showToast("Nama barang sudah ada pada kategori tersebut", "error");
+  const existing = window.appState.masterBarang.find(
+    (item) => String(item.id) === id,
+  );
+  const data = {
+    kategori: category,
+    nama: name,
+    satuan: unit,
+    createdAt: existing?.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  const submitButton = event.submitter;
+  setButtonLoading(submitButton, true, "Menyimpan...");
+  try {
+    await setDoc(doc(db, "master_items", id), data);
+    window.closeMasterBarangModal();
+    showToast("Master barang berhasil disimpan", "success");
+  } catch (error) {
+    showToast(error.message || "Master barang gagal disimpan", "error");
+  } finally {
+    setButtonLoading(submitButton, false);
+  }
+};
+
+window.deleteMasterBarang = async function (id) {
+  const item = window.appState.masterBarang.find(
+    (entry) => String(entry.id) === String(id),
+  );
+  if (!item || !window.confirm(`Hapus master barang "${item.nama}"?`)) return;
+  try {
+    await deleteDoc(doc(db, "master_items", String(id)));
+    showToast("Master barang berhasil dihapus", "success");
+  } catch (error) {
+    showToast(error.message || "Master barang gagal dihapus", "error");
+  }
+};
+
+window.refreshMasterBarangOptions = function (fallbackItem = null) {
+  const select = document.getElementById("inputMasterBarang");
+  if (!select) return;
+  const category = isOperationalPage() ? "operasional" : "bahan_baku";
+  const editingId = document.getElementById("barangId")?.value || "";
+  const currentItem =
+    fallbackItem ||
+    (editingId
+      ? getCurrentBarangItems().find(
+          (item) => String(item.id) === String(editingId),
+        )
+      : null);
+  const matchingItems = (window.appState.masterBarang || [])
+    .filter((item) => item.kategori === category)
+    .sort((a, b) =>
+      String(a.nama || "").localeCompare(String(b.nama || ""), "id"),
+    );
+  const linkedMaster = currentItem
+    ? matchingItems.find(
+        (item) =>
+          (currentItem.masterItemId &&
+            String(item.id) === String(currentItem.masterItemId)) ||
+          (String(item.nama || "")
+            .trim()
+            .toLocaleLowerCase("id-ID") ===
+            String(currentItem.nama || currentItem.name || "")
+              .trim()
+              .toLocaleLowerCase("id-ID") &&
+            String(item.satuan || "")
+              .trim()
+              .toLocaleLowerCase("id-ID") ===
+              String(currentItem.satuan || "")
+                .trim()
+                .toLocaleLowerCase("id-ID")),
+      )
+    : null;
+  const selectedValue = select.value;
+  const hasFallback = currentItem && !linkedMaster;
+  const placeholder = !window.appState.masterBarangLoaded
+    ? "Memuat master barang..."
+    : window.appState.masterBarangError
+      ? "Master barang tidak dapat diakses"
+      : matchingItems.length
+        ? "Pilih barang dari master"
+        : "Belum ada master pada kategori ini";
+  select.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>${matchingItems.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.nama)} · ${escapeHtml(item.satuan)}</option>`).join("")}`;
+  if (hasFallback) {
+    const fallbackValue = `legacy:${currentItem.id}`;
+    select.add(
+      new Option(
+        `${currentItem.nama || currentItem.name || "Barang lama"} · ${currentItem.satuan || "unit"} (belum di master)`,
+        fallbackValue,
+      ),
+    );
+    select.value = fallbackValue;
+    window.selectMasterBarangForEntry(fallbackValue, currentItem);
+  } else if (linkedMaster) {
+    select.value = String(linkedMaster.id);
+    window.selectMasterBarangForEntry(select.value);
+  } else if (matchingItems.some((item) => String(item.id) === selectedValue)) {
+    select.value = selectedValue;
+  } else {
+    select.value = "";
+    window.selectMasterBarangForEntry("");
+  }
+};
+
+window.selectMasterBarangForEntry = function (masterId, fallbackItem = null) {
+  const nameInput = document.getElementById("inputNamaBarang");
+  const unitInput = document.getElementById("inputSatuanBarang");
+  const item = window.appState.masterBarang.find(
+    (entry) => String(entry.id) === String(masterId),
+  );
+  if (item) {
+    if (nameInput) nameInput.value = item.nama || "";
+    if (unitInput) unitInput.value = item.satuan || "";
+  } else if (String(masterId || "").startsWith("legacy:") && fallbackItem) {
+    if (nameInput)
+      nameInput.value = fallbackItem.nama || fallbackItem.name || "";
+    if (unitInput) unitInput.value = fallbackItem.satuan || "";
+  } else {
+    if (nameInput) nameInput.value = "";
+    if (unitInput) unitInput.value = "";
+  }
+};
+
 window.openModalBarang = function () {
   document.getElementById("formBarang").reset();
   document.getElementById("barangId").value = "";
+  window.refreshMasterBarangOptions();
   document.getElementById("modalBarangTitle").innerText = isOperationalPage()
     ? "Tambah Barang Operasional"
     : "Tambah Barang Baru";
@@ -6761,6 +7153,7 @@ window.editBarang = function (id) {
   if (!item) return;
 
   document.getElementById("barangId").value = item.id;
+  window.refreshMasterBarangOptions(item);
   document.getElementById("inputNamaBarang").value =
     item.nama || item.name || "";
   document.getElementById("inputTanggalBarang").value = item.tanggal || "";
@@ -6782,10 +7175,32 @@ window.saveBarang = async function (e) {
   const id = document.getElementById("barangId").value || "b_" + Date.now();
   const currentItems = getCurrentBarangItems();
   const existing = currentItems.find((b) => String(b.id) === String(id)) || {};
+  const masterSelection = document.getElementById("inputMasterBarang").value;
+  const selectedMaster = window.appState.masterBarang.find(
+    (item) => String(item.id) === String(masterSelection),
+  );
+  const expectedCategory = isOperationalPage() ? "operasional" : "bahan_baku";
+  const isLegacySelection = masterSelection.startsWith("legacy:");
+  if (
+    (!existing.id && !selectedMaster) ||
+    (selectedMaster && selectedMaster.kategori !== expectedCategory)
+  )
+    return showToast(
+      "Pilih master barang sesuai kategori halaman ini",
+      "error",
+    );
+  if (isLegacySelection && !existing.id)
+    return showToast(
+      "Pilih barang dari Master Barang sebelum menyimpan",
+      "error",
+    );
 
   const data = {
     id,
-    nama: document.getElementById("inputNamaBarang").value,
+    nama:
+      selectedMaster?.nama || document.getElementById("inputNamaBarang").value,
+    masterItemId: selectedMaster?.id || existing.masterItemId || "",
+    kategoriBarang: expectedCategory,
     tanggal: document.getElementById("inputTanggalBarang").value,
     tipe: document.getElementById("inputTipeBarang").value,
     harga: Number(
@@ -6796,7 +7211,9 @@ window.saveBarang = async function (e) {
         existing.kebutuhan ||
         0,
     ),
-    satuan: document.getElementById("inputSatuanBarang").value.trim(),
+    satuan:
+      selectedMaster?.satuan ||
+      document.getElementById("inputSatuanBarang").value.trim(),
     datang: existing.datang || 0,
     stockHistory: Array.isArray(existing.stockHistory)
       ? existing.stockHistory

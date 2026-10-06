@@ -85,8 +85,19 @@
             <i class="fa-solid fa-boxes-stacked w-5 text-center"></i>
             <span>Kelola Barang</span>
           </a>
-          <a href="./stok.html" class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800 hover:text-white"><i class="fa-solid fa-boxes-packing w-5 text-center"></i><span>Stok Barang</span></a>
-          <a href="./menu.html" id="nav-menu" class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800 hover:text-white"><i class="fa-solid fa-utensils w-5 text-center"></i><span>Menu &amp; AKG</span></a>
+          <a
+            href="./stok.html"
+            class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800 hover:text-white"
+            ><i class="fa-solid fa-boxes-packing w-5 text-center"></i
+            ><span>Stok Barang</span></a
+          >
+          <a
+            href="./menu.html"
+            id="nav-menu"
+            class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800 hover:text-white"
+            ><i class="fa-solid fa-utensils w-5 text-center"></i
+            ><span>Menu &amp; AKG</span></a
+          >
           <a
             href="./supplier.html"
             id="nav-supplier"
@@ -111,7 +122,13 @@
             <i class="fa-solid fa-file-contract w-5 text-center"></i>
             <span>Dokumen & LPJ</span>
           </a>
-          <a href="./user.html" id="nav-users" class="nav-item hidden flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800 hover:text-white"><i class="fa-solid fa-users-gear w-5 text-center"></i><span>Pengguna</span></a>
+          <a
+            href="./user.html"
+            id="nav-users"
+            class="nav-item hidden flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800 hover:text-white"
+            ><i class="fa-solid fa-users-gear w-5 text-center"></i
+            ><span>Pengguna</span></a
+          >
           <a
             href="./setting.html"
             id="nav-setting"
@@ -139,7 +156,14 @@
             >v2.4 Online</span
           >
         </div>
-        <button id="installAppBtn" type="button" class="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20"><i class="fa-solid fa-download"></i><span>Install aplikasi</span></button><p class="text-[11px] text-slate-500">
+        <button
+          id="installAppBtn"
+          type="button"
+          class="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20"
+        >
+          <i class="fa-solid fa-download"></i><span>Install aplikasi</span>
+        </button>
+        <p class="text-[11px] text-slate-500">
           Kementerian / Badan Gizi Nasional
         </p>
       </div>
@@ -195,14 +219,24 @@
 
       <main class="flex-1 p-6 sm:p-10 max-w-7xl w-full mx-auto space-y-8">
         <section class="space-y-6 animate-fadeIn">
-          <div class="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-5">
+          <div
+            class="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-5"
+          >
             <div class="mb-4 flex flex-col gap-1">
               <h2 class="text-sm font-bold text-slate-800">Daftar Barang</h2>
-              <p class="text-xs text-slate-500">Cari barang dan atur filter sebelum melihat data atau membuat laporan.</p>
+              <p class="text-xs text-slate-500">
+                Cari barang dan atur filter sebelum melihat data atau membuat
+                laporan.
+              </p>
             </div>
-            <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(260px,1.5fr)_minmax(150px,.8fr)_minmax(160px,.8fr)_minmax(160px,.8fr)]">
+            <div
+              class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(260px,1.5fr)_minmax(150px,.8fr)_minmax(160px,.8fr)_minmax(160px,.8fr)]"
+            >
               <label class="relative block min-w-0">
-                <span class="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-slate-400">Cari barang</span>
+                <span
+                  class="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-slate-400"
+                  >Cari barang</span
+                >
                 <i
                   class="fa-solid fa-magnifying-glass absolute left-3.5 top-[2.35rem] text-slate-400 text-xs"
                 ></i>
@@ -214,40 +248,88 @@
                   class="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-9 pr-4 text-sm outline-none transition-all placeholder:text-slate-400 focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-500/20"
                 />
               </label>
-              <label class="block min-w-0"><span class="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-slate-400">Tipe barang</span>
-              <select
-                id="filterTipeBarang"
-                onchange="filterBarangTable()"
-                aria-label="Filter tipe barang"
-                class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-500/20"
-              >
-                <option value="ALL">Semua Tipe</option>
-                <option value="Utama">Utama</option>
-                <option value="Tambahan">Tambahan</option>
-              </select>
+              <label class="block min-w-0"
+                ><span
+                  class="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-slate-400"
+                  >Tipe barang</span
+                >
+                <select
+                  id="filterTipeBarang"
+                  onchange="filterBarangTable()"
+                  aria-label="Filter tipe barang"
+                  class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-500/20"
+                >
+                  <option value="ALL">Semua Tipe</option>
+                  <option value="Utama">Utama</option>
+                  <option value="Tambahan">Tambahan</option>
+                </select>
               </label>
-              <label class="block min-w-0"><span class="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-slate-400">Dari tanggal</span><input id="filterTanggalMulaiBarang" type="date" aria-label="Tanggal mulai" onchange="filterBarangTable()" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700 outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-500/20" /></label>
-              <label class="block min-w-0"><span class="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-slate-400">Sampai tanggal</span><input id="filterTanggalAkhirBarang" type="date" aria-label="Tanggal akhir" onchange="filterBarangTable()" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700 outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-500/20" /></label>
+              <label class="block min-w-0"
+                ><span
+                  class="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-slate-400"
+                  >Dari tanggal</span
+                ><input
+                  id="filterTanggalMulaiBarang"
+                  type="date"
+                  aria-label="Tanggal mulai"
+                  onchange="filterBarangTable()"
+                  class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700 outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-500/20"
+              /></label>
+              <label class="block min-w-0"
+                ><span
+                  class="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-slate-400"
+                  >Sampai tanggal</span
+                ><input
+                  id="filterTanggalAkhirBarang"
+                  type="date"
+                  aria-label="Tanggal akhir"
+                  onchange="filterBarangTable()"
+                  class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700 outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-500/20"
+              /></label>
             </div>
 
-            <div class="mt-4 flex flex-col gap-4 border-t border-slate-100 pt-4 xl:flex-row xl:items-center xl:justify-between">
-              <div class="flex min-w-0 items-start gap-2 rounded-xl bg-slate-50 px-3.5 py-3 text-xs text-slate-500 xl:bg-transparent xl:px-0 xl:py-0">
-                <i class="fa-solid fa-circle-info mt-0.5 text-sky-500"></i>
-                <span>Hasil mengikuti nama, tipe barang, dan rentang tanggal yang dipilih.</span>
-              </div>
-              <div class="grid grid-cols-2 gap-2 sm:grid-cols-2 xl:flex xl:flex-wrap xl:justify-end">
-              <button onclick="openRabModal()" class="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2"><i class="fa-solid fa-file-invoice-dollar"></i><span>Download RAB</span></button>
-              <button onclick="exportBarangReport()" class="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:ring-offset-2"><i class="fa-solid fa-file-csv"></i><span>Ekspor CSV</span></button>
-              <a href="./admin-penerimaan.html" class="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-center text-xs font-semibold text-sky-700 transition hover:bg-sky-100 focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2">
-                <i class="fa-solid fa-mobile-screen-button"></i><span>Admin Penerimaan</span>
-              </a>
-              <button
-                onclick="openModalBarang()"
-                class="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-sky-600/20 transition hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2"
+            <div
+              class="mt-4 flex flex-col gap-4 border-t border-slate-100 pt-4 xl:flex-row xl:items-center xl:justify-between"
+            >
+              <div
+                class="flex min-w-0 items-start gap-2 rounded-xl bg-slate-50 px-3.5 py-3 text-xs text-slate-500 xl:bg-transparent xl:px-0 xl:py-0"
               >
-                <i class="fa-solid fa-plus text-xs"></i>
-                <span>Tambah Barang</span>
-              </button>
+                <i class="fa-solid fa-circle-info mt-0.5 text-sky-500"></i>
+                <span
+                  >Hasil mengikuti nama, tipe barang, dan rentang tanggal yang
+                  dipilih.</span
+                >
+              </div>
+              <div
+                class="grid grid-cols-2 gap-2 sm:grid-cols-2 xl:flex xl:flex-wrap xl:justify-end"
+              >
+                <button
+                  onclick="openRabModal()"
+                  class="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2"
+                >
+                  <i class="fa-solid fa-file-invoice-dollar"></i
+                  ><span>Download RAB</span>
+                </button>
+                <button
+                  onclick="exportBarangReport()"
+                  class="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:ring-offset-2"
+                >
+                  <i class="fa-solid fa-file-csv"></i><span>Ekspor CSV</span>
+                </button>
+                <a
+                  href="./admin-penerimaan.html"
+                  class="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-center text-xs font-semibold text-sky-700 transition hover:bg-sky-100 focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2"
+                >
+                  <i class="fa-solid fa-mobile-screen-button"></i
+                  ><span>Admin Penerimaan</span>
+                </a>
+                <button
+                  onclick="openModalBarang()"
+                  class="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-sky-600/20 transition hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2"
+                >
+                  <i class="fa-solid fa-plus text-xs"></i>
+                  <span>Tambah Barang</span>
+                </button>
               </div>
             </div>
           </div>
@@ -282,18 +364,184 @@
       </main>
     </div>
 
-    <div id="modalRab" class="fixed inset-0 z-[70] hidden items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
+    <div
+      id="modalRab"
+      class="fixed inset-0 z-[70] hidden items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+    >
       <div class="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl sm:p-6">
-        <div class="mb-5 flex items-start justify-between gap-3"><div><h2 class="text-lg font-bold text-slate-800">Download RAB</h2><p class="mt-1 text-xs text-slate-500">Rancangan anggaran barang dan penerima manfaat</p></div><button type="button" onclick="closeRabModal()" class="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600"><i class="fa-solid fa-xmark"></i></button></div>
+        <div class="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <h2 class="text-lg font-bold text-slate-800">Download RAB</h2>
+            <p class="mt-1 text-xs text-slate-500">
+              Rancangan anggaran barang dan penerima manfaat
+            </p>
+          </div>
+          <button
+            type="button"
+            onclick="closeRabModal()"
+            class="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600"
+          >
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
         <form onsubmit="downloadRab(event)" class="space-y-4">
-          <div><label for="rabPeriodType" class="mb-1.5 block text-xs font-semibold text-slate-600">Periode laporan</label><select id="rabPeriodType" onchange="updateRabPeriodFields()" class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm"><option value="daily">Harian</option><option value="weekly">Mingguan</option><option value="monthly">Bulanan</option><option value="yearly">Tahunan</option></select></div>
-          <div id="rabDailyFields"><label for="rabDate" class="mb-1.5 block text-xs font-semibold text-slate-600">Tanggal</label><input id="rabDate" type="date" class="w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm" /></div>
-          <div id="rabWeeklyFields" class="hidden grid-cols-2 gap-3"><div><label for="rabStartDate" class="mb-1.5 block text-xs font-semibold text-slate-600">Dari tanggal</label><input id="rabStartDate" type="date" class="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm" /></div><div><label for="rabEndDate" class="mb-1.5 block text-xs font-semibold text-slate-600">Sampai tanggal</label><input id="rabEndDate" type="date" class="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm" /></div></div>
-          <div id="rabMonthlyFields" class="hidden grid-cols-2 gap-3"><div><label for="rabMonth" class="mb-1.5 block text-xs font-semibold text-slate-600">Bulan</label><select id="rabMonth" class="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"><option value="1">Januari</option><option value="2">Februari</option><option value="3">Maret</option><option value="4">April</option><option value="5">Mei</option><option value="6">Juni</option><option value="7">Juli</option><option value="8">Agustus</option><option value="9">September</option><option value="10">Oktober</option><option value="11">November</option><option value="12">Desember</option></select></div><div><label for="rabMonthYear" class="mb-1.5 block text-xs font-semibold text-slate-600">Tahun</label><input id="rabMonthYear" type="number" min="2000" max="2100" class="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm" /></div></div>
-          <div id="rabYearlyFields" class="hidden"><label for="rabYear" class="mb-1.5 block text-xs font-semibold text-slate-600">Tahun</label><input id="rabYear" type="number" min="2000" max="2100" class="w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm" /></div>
-          <div><div class="mb-1.5 flex items-center justify-between gap-3"><label for="rabPMSearch" class="text-xs font-semibold text-slate-600">Pilih penerima manfaat (PM)</label><button type="button" onclick="toggleAllRabPMs()" class="text-[11px] font-semibold text-violet-700">Pilih semua</button></div><input id="rabPMSearch" type="search" oninput="renderRabPMChoices()" placeholder="Cari nama PM..." class="mb-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs"/><div id="rabPMChoices" class="max-h-44 space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2"><p class="p-3 text-xs text-slate-400">Memuat daftar PM...</p></div><p id="rabPMSelectionCount" class="mt-1 text-[10px] text-slate-500"></p></div>
-          <p class="rounded-xl bg-sky-50 p-3 text-[11px] leading-relaxed text-sky-800">Laporan memuat barang pada rentang yang dipilih, daftar PM aktif, total porsi, serta estimasi pagu berdasarkan Rp10.000/porsi besar dan Rp8.000/porsi kecil. Data PM saat ini tidak memiliki riwayat efektif per tanggal; daftar PM menggunakan kondisi aktif saat laporan dibuat.</p>
-          <div class="flex gap-3 border-t border-slate-100 pt-4"><button type="button" onclick="closeRabModal()" class="flex-1 rounded-xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-600">Batal</button><button type="submit" class="flex-1 rounded-xl bg-violet-600 px-4 py-3 text-sm font-bold text-white hover:bg-violet-700"><i class="fa-solid fa-download mr-2"></i>Unduh RAB</button></div>
+          <div>
+            <label
+              for="rabPeriodType"
+              class="mb-1.5 block text-xs font-semibold text-slate-600"
+              >Periode laporan</label
+            ><select
+              id="rabPeriodType"
+              onchange="updateRabPeriodFields()"
+              class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm"
+            >
+              <option value="daily">Harian</option>
+              <option value="weekly">Mingguan</option>
+              <option value="monthly">Bulanan</option>
+              <option value="yearly">Tahunan</option>
+            </select>
+          </div>
+          <div id="rabDailyFields">
+            <label
+              for="rabDate"
+              class="mb-1.5 block text-xs font-semibold text-slate-600"
+              >Tanggal</label
+            ><input
+              id="rabDate"
+              type="date"
+              class="w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm"
+            />
+          </div>
+          <div id="rabWeeklyFields" class="hidden grid-cols-2 gap-3">
+            <div>
+              <label
+                for="rabStartDate"
+                class="mb-1.5 block text-xs font-semibold text-slate-600"
+                >Dari tanggal</label
+              ><input
+                id="rabStartDate"
+                type="date"
+                class="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"
+              />
+            </div>
+            <div>
+              <label
+                for="rabEndDate"
+                class="mb-1.5 block text-xs font-semibold text-slate-600"
+                >Sampai tanggal</label
+              ><input
+                id="rabEndDate"
+                type="date"
+                class="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"
+              />
+            </div>
+          </div>
+          <div id="rabMonthlyFields" class="hidden grid-cols-2 gap-3">
+            <div>
+              <label
+                for="rabMonth"
+                class="mb-1.5 block text-xs font-semibold text-slate-600"
+                >Bulan</label
+              ><select
+                id="rabMonth"
+                class="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"
+              >
+                <option value="1">Januari</option>
+                <option value="2">Februari</option>
+                <option value="3">Maret</option>
+                <option value="4">April</option>
+                <option value="5">Mei</option>
+                <option value="6">Juni</option>
+                <option value="7">Juli</option>
+                <option value="8">Agustus</option>
+                <option value="9">September</option>
+                <option value="10">Oktober</option>
+                <option value="11">November</option>
+                <option value="12">Desember</option>
+              </select>
+            </div>
+            <div>
+              <label
+                for="rabMonthYear"
+                class="mb-1.5 block text-xs font-semibold text-slate-600"
+                >Tahun</label
+              ><input
+                id="rabMonthYear"
+                type="number"
+                min="2000"
+                max="2100"
+                class="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm"
+              />
+            </div>
+          </div>
+          <div id="rabYearlyFields" class="hidden">
+            <label
+              for="rabYear"
+              class="mb-1.5 block text-xs font-semibold text-slate-600"
+              >Tahun</label
+            ><input
+              id="rabYear"
+              type="number"
+              min="2000"
+              max="2100"
+              class="w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm"
+            />
+          </div>
+          <div>
+            <div class="mb-1.5 flex items-center justify-between gap-3">
+              <label
+                for="rabPMSearch"
+                class="text-xs font-semibold text-slate-600"
+                >Pilih penerima manfaat (PM)</label
+              ><button
+                type="button"
+                onclick="toggleAllRabPMs()"
+                class="text-[11px] font-semibold text-violet-700"
+              >
+                Pilih semua
+              </button>
+            </div>
+            <input
+              id="rabPMSearch"
+              type="search"
+              oninput="renderRabPMChoices()"
+              placeholder="Cari nama PM..."
+              class="mb-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs"
+            />
+            <div
+              id="rabPMChoices"
+              class="max-h-44 space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2"
+            >
+              <p class="p-3 text-xs text-slate-400">Memuat daftar PM...</p>
+            </div>
+            <p
+              id="rabPMSelectionCount"
+              class="mt-1 text-[10px] text-slate-500"
+            ></p>
+          </div>
+          <p
+            class="rounded-xl bg-sky-50 p-3 text-[11px] leading-relaxed text-sky-800"
+          >
+            Laporan memuat barang pada rentang yang dipilih, daftar PM aktif,
+            total porsi, serta estimasi pagu berdasarkan Rp10.000/porsi besar
+            dan Rp8.000/porsi kecil. Data PM saat ini tidak memiliki riwayat
+            efektif per tanggal; daftar PM menggunakan kondisi aktif saat
+            laporan dibuat.
+          </p>
+          <div class="flex gap-3 border-t border-slate-100 pt-4">
+            <button
+              type="button"
+              onclick="closeRabModal()"
+              class="flex-1 rounded-xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-600"
+            >
+              Batal</button
+            ><button
+              type="submit"
+              class="flex-1 rounded-xl bg-violet-600 px-4 py-3 text-sm font-bold text-white hover:bg-violet-700"
+            >
+              <i class="fa-solid fa-download mr-2"></i>Unduh RAB
+            </button>
+          </div>
         </form>
       </div>
     </div>
@@ -328,15 +576,24 @@
 
           <div>
             <label class="block font-semibold text-slate-700 mb-1"
-              >Nama Barang / Makanan</label
+              >Pilih Master Barang</label
             >
-            <input
-              type="text"
-              id="inputNamaBarang"
+            <select
+              id="inputMasterBarang"
               required
-              placeholder="Contoh: Beras Pulen Premium / Telur Ayam"
+              onchange="selectMasterBarangForEntry(this.value)"
               class="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none"
-            />
+            >
+              <option value="">Memuat master barang...</option>
+            </select>
+            <a
+              href="./master-barang.html"
+              target="_blank"
+              rel="noopener"
+              class="mt-2 inline-flex items-center gap-1 text-[10px] font-semibold text-sky-700 hover:text-sky-900"
+              ><i class="fa-solid fa-list-check"></i>Kelola Master Barang</a
+            >
+            <input type="hidden" id="inputNamaBarang" />
           </div>
 
           <div class="grid grid-cols-2 gap-3">
@@ -390,6 +647,7 @@
                 id="inputSatuanBarang"
                 required
                 placeholder="kg, liter, dus"
+                readonly
                 class="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none"
               />
             </div>

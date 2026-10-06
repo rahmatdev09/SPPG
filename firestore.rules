@@ -38,6 +38,10 @@ service cloud.firestore {
       allow read, write: if hasActiveAccount();
     }
 
+    match /master_items/{itemId} {
+      allow read, write: if hasActiveAccount();
+    }
+
     match /inventory_items/{itemId} {
       allow read, write: if hasActiveAccount();
     }

@@ -1,4 +1,4 @@
-const CACHE_NAME = "mbg-pwa-v50-operational-items";
+const CACHE_NAME = "mbg-pwa-v51-master-items";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -6,6 +6,7 @@ const APP_SHELL = [
   "./admin-pwa.webmanifest",
   "./barang.html",
   "./barang.html?jenis=operasional",
+  "./master-barang.html",
   "./menu.html",
   "./user.html",
   "./supplier.html",
