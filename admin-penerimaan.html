@@ -26,30 +26,42 @@
     />
     <link rel="stylesheet" href="./styles.css" />
   </head>
-  <body class="min-h-full bg-slate-50 text-slate-800 antialiased">
+  <body
+    class="admin-pwa-shell min-h-[100dvh] bg-slate-50 text-slate-800 antialiased"
+  >
     <header
-      class="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur sm:px-6"
+      class="admin-pwa-header sticky top-0 z-20 border-b border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-6 sm:py-5"
     >
-      <div class="mx-auto flex max-w-3xl items-center justify-between gap-3">
-        <div class="flex items-center gap-3">
-          <div
-            id="adminPwaBrandIcon"
-            class="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-700 text-white"
-          >
-            <i class="fa-solid fa-box-open"></i>
-          </div>
+      <div
+        class="mx-auto flex max-w-7xl items-center justify-between gap-3 sm:gap-5"
+      >
+        <div class="min-w-0">
           <div>
-            <h1 id="adminPwaPageTitle" class="font-bold">Dashboard Admin</h1>
-            <p id="adminPwaPageSubtitle" class="text-[11px] text-slate-500">
+            <h1
+              id="adminPwaPageTitle"
+              class="truncate text-lg font-bold tracking-tight text-slate-800 sm:text-xl"
+            >
+              Dashboard Admin
+            </h1>
+            <p
+              id="adminPwaPageSubtitle"
+              class="mt-0.5 truncate text-xs text-slate-500"
+            >
               Ringkasan logistik MBG
             </p>
           </div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex shrink-0 items-center gap-2 sm:gap-3">
+          <div
+            class="hidden items-center gap-2 rounded-xl border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 md:flex"
+          >
+            <i class="fa-regular fa-calendar text-sky-600"></i>
+            <span id="currentDateStr">--</span>
+          </div>
           <button
             id="installAppBtn"
             type="button"
-            class="hidden items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-[11px] font-semibold text-white"
+            class="hidden min-h-10 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100"
           >
             <i class="fa-solid fa-download"></i><span>Pasang</span>
           </button>
@@ -980,8 +992,8 @@
       />
     </div>
     <nav
-      class="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-2 pt-2 shadow-[0_-8px_24px_rgba(15,23,42,.08)] backdrop-blur"
-      style="padding-bottom: calc(0.5rem + env(safe-area-inset-bottom))"
+      id="adminPwaBottomNav"
+      class="admin-pwa-bottom-nav fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-2 pt-2 shadow-[0_-8px_24px_rgba(15,23,42,.08)] backdrop-blur"
       aria-label="Navigasi Admin Logistik"
     >
       <div class="mx-auto grid max-w-3xl grid-cols-4 gap-1">
@@ -989,6 +1001,7 @@
           id="adminNavDashboard"
           type="button"
           onclick="showAdminPwaTab('dashboard')"
+          aria-current="page"
           class="admin-pwa-nav flex flex-col items-center gap-1 rounded-xl px-2 py-2 text-[10px] font-semibold text-slate-400"
         >
           <i class="fa-solid fa-house text-base"></i

@@ -15,20 +15,22 @@ Proyek ini tidak menggunakan proses build atau package manager. Jalankan berkas 
 
 ## Halaman utama
 
-| Halaman | Kegunaan |
-| --- | --- |
-| `index.html` | Dashboard ringkasan |
-| `barang.html` | Kelola barang, penerimaan, persetujuan, dan RAB |
-| `stok.html` | Kelola stok, batas minimum, peringatan restok, riwayat transaksi, serta stok opname |
-| `supplier.html` | Data supplier dan rekening |
-| `pm.html` | Data penerima manfaat, porsi, pagu, lokasi, dan rute |
-| `menu.html` | Data menu dan informasi AKG |
-| `dokumen.html` | Dokumen yang tersimpan di Google Drive |
-| `surat.html` | Buat, simpan, buka kembali, dan hapus surat permintaan pembayaran |
-| `user.html` | Pengaturan akun dan role pengguna |
-| `setting.html` | Identitas dapur/yayasan, logo, lokasi, dan nama penandatangan |
-| `tentang.html` | Informasi aplikasi dan layanan |
-| `admin-penerimaan.html` | Antarmuka PWA admin logistik untuk dashboard, penerimaan barang, stok, dan profil |
+| Halaman                         | Kegunaan                                                                            |
+| ------------------------------- | ----------------------------------------------------------------------------------- |
+| `index.html`                    | Dashboard ringkasan                                                                 |
+| `barang.html`                   | Kelola bahan baku, penerimaan, persetujuan, dan RAB                                 |
+| `barang.html?jenis=operasional` | Kelola barang operasional secara terpisah dari bahan baku                           |
+| `master-barang.html`            | Kelola katalog pilihan barang bahan baku dan operasional                            |
+| `stok.html`                     | Kelola stok, batas minimum, peringatan restok, riwayat transaksi, serta stok opname |
+| `supplier.html`                 | Data supplier dan rekening                                                          |
+| `pm.html`                       | Data penerima manfaat, porsi, pagu, lokasi, dan rute                                |
+| `menu.html`                     | Data menu dan informasi AKG                                                         |
+| `dokumen.html`                  | Dokumen yang tersimpan di Google Drive                                              |
+| `surat.html`                    | Buat, simpan, buka kembali, dan hapus surat permintaan pembayaran                   |
+| `user.html`                     | Pengaturan akun dan role pengguna                                                   |
+| `setting.html`                  | Identitas dapur/yayasan, logo, lokasi, dan nama penandatangan                       |
+| `tentang.html`                  | Informasi aplikasi dan layanan                                                      |
+| `admin-penerimaan.html`         | Antarmuka PWA admin logistik untuk dashboard, penerimaan barang, stok, dan profil   |
 
 ## Firebase
 
@@ -52,7 +54,7 @@ Setelah Super Admin pertama bisa login, akun berikutnya dapat dikelola dari menu
 Publikasikan isi berkas [`firestore.rules`](./firestore.rules) ke Firebase Console > Firestore Database > **Rules** setiap kali aturan berubah. Koleksi aplikasi yang diatur di dalamnya meliputi:
 
 - `app_users`: akun dan role; pengelolaannya khusus Super Admin.
-- `mbg_items`, `inventory_items`, `suppliers`, `menus`, `barang_arrival_photos`, dan `payment_letters`: hanya dapat diakses akun aktif yang memiliki role `super_admin` atau `admin_logistik`.
+- `mbg_items`, `operational_items`, `master_items`, `inventory_items`, `suppliers`, `menus`, `barang_arrival_photos`, dan `payment_letters`: hanya dapat diakses akun aktif yang memiliki role `super_admin` atau `admin_logistik`.
 - `app_metadata`: penanda migrasi awal katalog stok.
 - `app_settings`: identitas dapur/yayasan, logo, lokasi, dan penandatangan yang dibagikan ke seluruh perangkat.
 - `pms`: dapat dibaca akun aktif dan hanya dapat diubah Super Admin.
@@ -70,7 +72,10 @@ Halaman Dokumen meminta izin Google Drive melalui login Google. Aktifkan **Googl
 
 - Pengaturan dapur, yayasan, logo, lokasi, dan nama penandatangan disimpan bersama di `app_settings/organization`. Data lama di `localStorage` dimigrasikan otomatis saat dokumen bersama belum tersedia; cache lokal tetap dipakai untuk mempercepat tampilan.
 - Surat permintaan pembayaran disimpan di koleksi Firestore `payment_letters`. Surat tersimpan mencakup rincian barang, supplier, penandatangan, salinan kop, dan lampiran yang dikompres. Total ukuran lampiran dibatasi agar dokumen tidak melewati batas Firestore.
-- Kelola Barang dan Stok Barang memakai koleksi terpisah: `mbg_items` untuk rencana/penerimaan harian dan `inventory_items` untuk saldo serta riwayat persediaan. Saat pembaruan pertama, saldo lama yang memiliki stok atau riwayat disalin satu kali ke katalog persediaan dan barang dengan nama serta satuan yang sama digabung. Penerimaan PWA berikutnya mencatat transaksi ke persediaan.
+- Master Barang disimpan di `master_items`. Setiap master memiliki `kategori` (`bahan_baku` atau `operasional`), `nama`, dan `satuan`. Tambahkan barang melalui halaman Master Barang terlebih dahulu; form Kelola Barang kemudian hanya menampilkan master sesuai kategorinya dan mengisi nama serta satuan secara otomatis. Tabel Master Barang mendukung pencarian, filter kategori, dan pagination 10, 25, atau 50 baris.
+- Barang harian memakai koleksi terpisah: `mbg_items` untuk bahan baku dan `operational_items` untuk barang operasional. Barang baru menyimpan referensi `masterItemId` dan kategori; barang lama yang belum tertaut tetap dapat diedit dan dipautkan ke master yang cocok. Mode operasional dibuka melalui `barang.html?jenis=operasional`.
+- Admin Penerimaan menyediakan pilihan Bahan Baku atau Operasional. Daftar pending dan transaksi penerimaan mengikuti koleksi yang dipilih. Surat Permintaan Pembayaran juga memiliki pilihan kategori dan membatasi pilihan barang, tambah-semua, serta foto penerimaan ke kategori tersebut.
+- `inventory_items` menyimpan saldo serta riwayat persediaan. Saat pembaruan pertama, saldo lama yang memiliki stok atau riwayat disalin satu kali ke katalog persediaan dan barang dengan nama serta satuan yang sama digabung. Penerimaan PWA berikutnya mencatat transaksi ke persediaan.
 - Setiap barang stok dapat memiliki `minimumStock`. Peringatan muncul di Stok Barang dan dashboard PWA saat saldo sama dengan atau di bawah nilai tersebut; nilai `0` menonaktifkan peringatan.
 
 ## PWA dan cache

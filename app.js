@@ -2448,8 +2448,32 @@ window.showAdminPwaTab = function (tab) {
     profile: "adminProfilePanel",
   };
   if (!panels[tab]) return;
+  const currentTab = Object.keys(panels).find(
+    (key) =>
+      document
+        .getElementById(
+          {
+            dashboard: "adminNavDashboard",
+            arrival: "adminNavArrival",
+            stock: "adminNavStock",
+            profile: "adminNavProfile",
+          }[key],
+        )
+        ?.getAttribute("aria-current") === "page",
+  );
+  const tabChanged = currentTab !== tab;
   Object.entries(panels).forEach(([key, id]) => {
-    document.getElementById(id)?.classList.toggle("hidden", key !== tab);
+    const panel = document.getElementById(id);
+    const isActive = key === tab;
+    if (panel) {
+      panel.classList.toggle("hidden", !isActive);
+      panel.setAttribute("aria-hidden", String(!isActive));
+      if (isActive && tabChanged) {
+        panel.classList.remove("admin-pwa-panel-enter");
+        void panel.offsetWidth;
+        panel.classList.add("admin-pwa-panel-enter");
+      }
+    }
     const button = document.getElementById(
       {
         dashboard: "adminNavDashboard",
@@ -2461,6 +2485,10 @@ window.showAdminPwaTab = function (tab) {
     button?.classList.toggle("text-sky-700", key === tab);
     button?.classList.toggle("text-slate-400", key !== tab);
     button?.classList.toggle("bg-sky-50", key === tab);
+    if (button) {
+      if (isActive) button.setAttribute("aria-current", "page");
+      else button.removeAttribute("aria-current");
+    }
   });
   const heading = {
     dashboard: ["Dashboard Admin", "Ringkasan logistik MBG"],
@@ -2474,7 +2502,13 @@ window.showAdminPwaTab = function (tab) {
   if (subtitle) subtitle.textContent = heading[1];
   if (tab === "stock") renderAdminPwaStock();
   if (tab === "profile") renderAdminPwaProfile();
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  if (tabChanged && navigator.vibrate) navigator.vibrate(8);
+  window.scrollTo({
+    top: 0,
+    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? "auto"
+      : "smooth",
+  });
 };
 
 function renderAdminPwaDashboard() {
