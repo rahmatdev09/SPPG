@@ -63,6 +63,10 @@ service cloud.firestore {
       allow read, write: if hasActiveAccount();
     }
 
+    match /limbah/{limbahId} {
+      allow read, write: if hasActiveAccount();
+    }
+
     match /payment_letters/{letterId} {
       allow read, write: if hasActiveAccount();
     }

@@ -1,4 +1,4 @@
-const CACHE_NAME = "mbg-pwa-v53-incentive-pagination";
+const CACHE_NAME = "mbg-pwa-v54-limbah";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -8,6 +8,7 @@ const APP_SHELL = [
   "./barang.html?jenis=operasional",
   "./master-barang.html",
   "./menu.html",
+  "./limbah.html",
   "./user.html",
   "./supplier.html",
   "./pm.html",

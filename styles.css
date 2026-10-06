@@ -2,6 +2,30 @@ body {
   font-family: "Inter", sans-serif;
 }
 
+#sidebar > div:first-child {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+#sidebar > div:first-child > div:first-child {
+  flex: 0 0 auto;
+}
+
+#sidebar > div:first-child > nav {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #475569 transparent;
+}
+
+#sidebar > div:last-child {
+  flex: 0 0 auto;
+}
+
 .stock-loading {
   grid-column: 1 / -1;
   display: flex;
