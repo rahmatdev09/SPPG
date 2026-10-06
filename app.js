@@ -2502,7 +2502,6 @@ window.showAdminPwaTab = function (tab) {
   if (subtitle) subtitle.textContent = heading[1];
   if (tab === "stock") renderAdminPwaStock();
   if (tab === "profile") renderAdminPwaProfile();
-  if (tabChanged && navigator.vibrate) navigator.vibrate(8);
   window.scrollTo({
     top: 0,
     behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
@@ -5901,6 +5900,9 @@ window.openAppUserModal = function (email = "") {
     document.getElementById("appUserModalTitle").textContent =
       "Atur Akses Pengguna";
   }
+  const modal = document.getElementById("modalAppUser");
+  modal?.classList.remove("hidden");
+  modal?.classList.add("flex");
 };
 
 window.editAppUser = function (email) {
@@ -5908,7 +5910,9 @@ window.editAppUser = function (email) {
 };
 
 window.closeAppUserModal = function () {
-  document.getElementById("modalAppUser")?.classList.add("hidden");
+  const modal = document.getElementById("modalAppUser");
+  modal?.classList.add("hidden");
+  modal?.classList.remove("flex");
 };
 
 window.saveAppUser = async function (event) {
