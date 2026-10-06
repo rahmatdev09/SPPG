@@ -40,6 +40,9 @@ const legacyDummyBarangIds = new Set(["b1", "b2", "b3", "b4"]);
 
 window.appState = {
   barang: [],
+  barangOperasional: [],
+  barangOperasionalLoaded: false,
+  barangOperasionalError: "",
   inventoryItems: [],
   inventoryLoaded: false,
   kitchenSettings: null,
@@ -100,8 +103,24 @@ const USER_ROLES = {
   LOGISTICS: "admin_logistik",
 };
 
+function isOperationalPage() {
+  return new URLSearchParams(location.search).get("jenis") === "operasional";
+}
+
+function getCurrentBarangItems() {
+  return isOperationalPage()
+    ? window.appState.barangOperasional
+    : window.appState.barang;
+}
+
+function getCurrentBarangCollection() {
+  return isOperationalPage() ? "operational_items" : "mbg_items";
+}
+
 function normalizeAccountEmail(email) {
-  return String(email || "").trim().toLowerCase();
+  return String(email || "")
+    .trim()
+    .toLowerCase();
 }
 
 async function getAccountAccess(email) {
@@ -113,21 +132,31 @@ async function getAccountAccess(email) {
 }
 
 function isSuperAdmin() {
-  return window.appState.access?.role === USER_ROLES.SUPER_ADMIN && window.appState.access?.active === true;
+  return (
+    window.appState.access?.role === USER_ROLES.SUPER_ADMIN &&
+    window.appState.access?.active === true
+  );
 }
 
 function canUseCurrentPage(role) {
   if (role === USER_ROLES.SUPER_ADMIN) return true;
   const page = location.pathname.split("/").pop() || "index.html";
-  return !["pm.html", "dokumen.html", "setting.html", "user.html"].includes(page);
+  return !["pm.html", "dokumen.html", "setting.html", "user.html"].includes(
+    page,
+  );
 }
 
-function renderAccessGate({ checking = false, denied = false, restricted = false } = {}) {
+function renderAccessGate({
+  checking = false,
+  denied = false,
+  restricted = false,
+} = {}) {
   let gate = document.getElementById("accountAccessGate");
   if (!gate) {
     gate = document.createElement("div");
     gate.id = "accountAccessGate";
-    gate.className = "fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-5";
+    gate.className =
+      "fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-5";
     document.body.appendChild(gate);
   }
   gate.classList.remove("hidden");
@@ -148,17 +177,52 @@ function hideAccessGate() {
 
 function updateRoleNavigation() {
   const superAdmin = isSuperAdmin();
-  document.querySelectorAll('#nav-users, a[href="./pm.html"], a[href="./dokumen.html"], a[href="./setting.html"]').forEach((link) => {
-    link.classList.toggle("hidden", !superAdmin);
-  });
+  document
+    .querySelectorAll(
+      '#nav-users, a[href="./pm.html"], a[href="./dokumen.html"], a[href="./setting.html"]',
+    )
+    .forEach((link) => {
+      link.classList.toggle("hidden", !superAdmin);
+    });
   const nav = document.querySelector("#sidebar nav");
-  if (nav && !nav.querySelector('#nav-surat')) {
+  if (nav && !nav.querySelector("#nav-operasional")) {
     const link = document.createElement("a");
-    const active = (location.pathname.split("/").pop() || "index.html") === "surat.html";
+    link.id = "nav-operasional";
+    link.href = "./barang.html?jenis=operasional";
+    link.className =
+      "nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200";
+    link.innerHTML =
+      '<i class="fa-solid fa-toolbox w-5 text-center"></i><span>Kelola Operasional</span>';
+    const barangLink = nav.querySelector(
+      '#nav-barang, a[href="./barang.html"]',
+    );
+    if (barangLink?.parentElement === nav) barangLink.after(link);
+    else nav.appendChild(link);
+  }
+  const barangLink = nav?.querySelector('#nav-barang, a[href="./barang.html"]');
+  const operationalLink = nav?.querySelector("#nav-operasional");
+  const currentPage = location.pathname.split("/").pop() || "index.html";
+  [
+    [barangLink, currentPage === "barang.html" && !isOperationalPage()],
+    [operationalLink, isOperationalPage()],
+  ].forEach(([link, active]) => {
+    if (!link) return;
+    link.classList.toggle("bg-sky-600", active);
+    link.classList.toggle("text-white", active);
+    link.classList.toggle("shadow-md", active);
+    link.classList.toggle("shadow-sky-600/30", active);
+    link.classList.toggle("hover:bg-slate-800", !active);
+    link.classList.toggle("hover:text-white", !active);
+  });
+  if (nav && !nav.querySelector("#nav-surat")) {
+    const link = document.createElement("a");
+    const active =
+      (location.pathname.split("/").pop() || "index.html") === "surat.html";
     link.id = "nav-surat";
     link.href = "./surat.html";
     link.className = `nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${active ? "bg-sky-600 text-white shadow-md shadow-sky-600/30" : "hover:bg-slate-800 hover:text-white"}`;
-    link.innerHTML = '<i class="fa-solid fa-envelope-open-text w-5 text-center"></i><span>Surat Menyurat</span>';
+    link.innerHTML =
+      '<i class="fa-solid fa-envelope-open-text w-5 text-center"></i><span>Surat Menyurat</span>';
     const after = nav.querySelector('#nav-dokumen, a[href="./dokumen.html"]');
     if (after?.parentElement === nav) after.after(link);
     else nav.appendChild(link);
@@ -174,16 +238,23 @@ function setupInstallPrompt() {
     installButton.classList.add("inline-flex");
   };
   const markInstalled = () => {
-    try { localStorage.setItem("mbgPwaInstalled", "true"); } catch {}
+    try {
+      localStorage.setItem("mbgPwaInstalled", "true");
+    } catch {}
     showInstallButton();
     installButton.disabled = true;
-    installButton.classList.remove("hover:bg-emerald-500/20", "text-emerald-300");
+    installButton.classList.remove(
+      "hover:bg-emerald-500/20",
+      "text-emerald-300",
+    );
     installButton.classList.add("cursor-default", "text-emerald-200");
-    installButton.innerHTML = '<i class="fa-solid fa-circle-check"></i><span>Terinstal</span>';
+    installButton.innerHTML =
+      '<i class="fa-solid fa-circle-check"></i><span>Terinstal</span>';
   };
-  const installedPreviously = window.matchMedia("(display-mode: standalone)").matches
-    || window.navigator.standalone === true
-    || localStorage.getItem("mbgPwaInstalled") === "true";
+  const installedPreviously =
+    window.matchMedia("(display-mode: standalone)").matches ||
+    window.navigator.standalone === true ||
+    localStorage.getItem("mbgPwaInstalled") === "true";
   if (installedPreviously) {
     markInstalled();
     return;
@@ -203,7 +274,10 @@ function setupInstallPrompt() {
 
   installButton.addEventListener("click", async () => {
     if (!deferredPrompt) {
-      showToast("Browser belum menyediakan proses pemasangan aplikasi.", "info");
+      showToast(
+        "Browser belum menyediakan proses pemasangan aplikasi.",
+        "info",
+      );
       return;
     }
 
@@ -295,11 +369,17 @@ function showDriveApiError(error) {
   const message = String(error?.message || "");
   const errorCode = String(error?.code || "");
   if (errorCode === "auth/unauthorized-domain") {
-    showToast(`Domain ${location.hostname} belum diizinkan di Firebase Authentication. Tambahkan domain ini pada Authorized domains.`, "error");
+    showToast(
+      `Domain ${location.hostname} belum diizinkan di Firebase Authentication. Tambahkan domain ini pada Authorized domains.`,
+      "error",
+    );
     return;
   }
   if (errorCode === "auth/popup-blocked") {
-    showToast("Popup login diblokir browser. Izinkan pop-up untuk situs ini lalu coba login lagi.", "error");
+    showToast(
+      "Popup login diblokir browser. Izinkan pop-up untuk situs ini lalu coba login lagi.",
+      "error",
+    );
     return;
   }
   const setupNotice = document.getElementById("driveApiSetupNotice");
@@ -353,10 +433,14 @@ function renderDriveQuota() {
   if (!quota) {
     const hasWebLogin = Boolean(window.appState.user);
     const needsLoginRefresh = Boolean(
-      hasWebLogin && !window.appState.driveAccessToken && !readDrivePermission(window.appState.user.uid),
+      hasWebLogin &&
+      !window.appState.driveAccessToken &&
+      !readDrivePermission(window.appState.user.uid),
     );
     const needsDriveReconnect = Boolean(
-      hasWebLogin && !window.appState.driveAccessToken && readDrivePermission(window.appState.user.uid),
+      hasWebLogin &&
+      !window.appState.driveAccessToken &&
+      readDrivePermission(window.appState.user.uid),
     );
     const isConnecting = Boolean(
       window.appState.user && window.appState.driveAccessToken,
@@ -386,7 +470,9 @@ function renderDriveQuota() {
       "hidden",
       !(window.appState.user && !window.appState.driveAccessToken),
     );
-    if (reconnectButton && hasWebLogin) reconnectButton.innerHTML = '<i class="fa-brands fa-google mr-1"></i>Sambungkan Drive';
+    if (reconnectButton && hasWebLogin)
+      reconnectButton.innerHTML =
+        '<i class="fa-brands fa-google mr-1"></i>Sambungkan Drive';
     bar.style.width = "0%";
     return;
   }
@@ -416,7 +502,10 @@ async function authorizeGoogleDrive() {
     return cachedToken;
   }
   try {
-    const result = await reauthenticateWithPopup(window.appState.user, googleProvider);
+    const result = await reauthenticateWithPopup(
+      window.appState.user,
+      googleProvider,
+    );
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (credential?.accessToken) {
       saveDriveToken(credential.accessToken, result.user.uid);
@@ -430,16 +519,24 @@ async function authorizeGoogleDrive() {
   }
 }
 
-function setDriveLoadingState(isLoading, message = "Menghubungkan ke Google Drive...") {
+function setDriveLoadingState(
+  isLoading,
+  message = "Menghubungkan ke Google Drive...",
+) {
   const tbody = document.getElementById("dokumenTableBody");
   const count = document.getElementById("driveFilesCount");
   const status = document.getElementById("driveStorageStatus");
   const reconnectButton = document.getElementById("driveReconnectButton");
   if (isLoading) {
     reconnectButton?.classList.add("hidden");
-    if (count) count.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Memuat file...';
-    if (status) status.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Menghubungkan...';
-    if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="py-10 text-center text-sm font-medium text-sky-700"><i class="fa-solid fa-spinner fa-spin mr-2"></i>${escapeHtml(message)}</td></tr>`;
+    if (count)
+      count.innerHTML =
+        '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Memuat file...';
+    if (status)
+      status.innerHTML =
+        '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Menghubungkan...';
+    if (tbody)
+      tbody.innerHTML = `<tr><td colspan="7" class="py-10 text-center text-sm font-medium text-sky-700"><i class="fa-solid fa-spinner fa-spin mr-2"></i>${escapeHtml(message)}</td></tr>`;
   }
 }
 
@@ -450,7 +547,9 @@ function showDriveReconnectButton(visible) {
 
 function readDrivePermission(userId) {
   try {
-    const saved = JSON.parse(localStorage.getItem("mbgDrivePermission") || "null");
+    const saved = JSON.parse(
+      localStorage.getItem("mbgDrivePermission") || "null",
+    );
     return saved?.userId === userId && saved.scopeVersion === 4;
   } catch {
     return false;
@@ -459,20 +558,27 @@ function readDrivePermission(userId) {
 
 function saveDrivePermission(userId) {
   try {
-    localStorage.setItem("mbgDrivePermission", JSON.stringify({ userId, scopeVersion: 4 }));
+    localStorage.setItem(
+      "mbgDrivePermission",
+      JSON.stringify({ userId, scopeVersion: 4 }),
+    );
   } catch {}
 }
 
 function saveDrivePermissionFromUser(user) {
   if (!user) return;
-  const provider = user.providerData?.find((entry) => entry.providerId === "google.com");
+  const provider = user.providerData?.find(
+    (entry) => entry.providerId === "google.com",
+  );
   if (provider) saveDrivePermission(user.uid);
 }
 
 function readDriveToken(userId) {
   try {
     const saved = JSON.parse(
-      localStorage.getItem("mbgDriveSession") || sessionStorage.getItem("mbgDriveSession") || "null",
+      localStorage.getItem("mbgDriveSession") ||
+        sessionStorage.getItem("mbgDriveSession") ||
+        "null",
     );
     if (
       !saved ||
@@ -504,7 +610,15 @@ function saveDriveToken(accessToken, userId) {
         expiresAt: Date.now() + 50 * 60 * 1000,
       }),
     );
-    localStorage.setItem("mbgDriveSession", JSON.stringify({ accessToken, userId, scopeVersion: 4, expiresAt: Date.now() + 50 * 60 * 1000 }));
+    localStorage.setItem(
+      "mbgDriveSession",
+      JSON.stringify({
+        accessToken,
+        userId,
+        scopeVersion: 4,
+        expiresAt: Date.now() + 50 * 60 * 1000,
+      }),
+    );
   } catch {}
 }
 
@@ -548,7 +662,10 @@ async function loadDriveQuota(accessToken) {
 
 async function refreshDriveConnection(accessToken) {
   window.appState.driveLoaded = false;
-  setDriveLoadingState(true, "Memuat penyimpanan dan daftar file Google Drive...");
+  setDriveLoadingState(
+    true,
+    "Memuat penyimpanan dan daftar file Google Drive...",
+  );
   const account = await loadDriveQuota(accessToken);
   const accountLabel = document.getElementById("driveAccountLabel");
   if (accountLabel) {
@@ -585,11 +702,11 @@ async function loadDriveFiles(accessToken = window.appState.driveAccessToken) {
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );
     const result = await response.json();
-  if (response.status === 401) {
-    clearDriveToken();
-    window.appState.driveLoaded = false;
-    showDriveReconnectButton(true);
-  }
+    if (response.status === 401) {
+      clearDriveToken();
+      window.appState.driveLoaded = false;
+      showDriveReconnectButton(true);
+    }
     if (!response.ok) {
       throw new Error(
         result.error?.message || "Gagal mengambil daftar file Google Drive.",
@@ -750,7 +867,8 @@ window.showDriveFileDetails = async function (fileId) {
       window.appState.drivePreviewUrl = previewUrl;
       await new Promise((resolve, reject) => {
         previewImage.onload = () => resolve();
-        previewImage.onerror = () => reject(new Error("Gambar tidak dapat ditampilkan."));
+        previewImage.onerror = () =>
+          reject(new Error("Gambar tidak dapat ditampilkan."));
         previewImage.src = previewUrl;
       });
       previewImage.classList.remove("hidden");
@@ -978,39 +1096,56 @@ function setupFirestoreListeners() {
   renderAdminPwaDashboard();
   renderAdminPwaStock();
   renderSppLetters();
-  onSnapshot(doc(db, "app_settings", "organization"), async (snapshot) => {
-    if (snapshot.exists()) {
-      const settings = snapshot.data();
-      window.appState.kitchenSettings = settings;
-      try { localStorage.setItem("mbgKitchenSettings", JSON.stringify(settings)); } catch {}
-      window.dispatchEvent(new Event("mbg-kitchen-settings-updated"));
-      return;
-    }
+  onSnapshot(
+    doc(db, "app_settings", "organization"),
+    async (snapshot) => {
+      if (snapshot.exists()) {
+        const settings = snapshot.data();
+        window.appState.kitchenSettings = settings;
+        try {
+          localStorage.setItem("mbgKitchenSettings", JSON.stringify(settings));
+        } catch {}
+        window.dispatchEvent(new Event("mbg-kitchen-settings-updated"));
+        return;
+      }
 
-    // Migrate existing per-device settings once if the shared document does not exist yet.
-    try {
-      const cached = JSON.parse(localStorage.getItem("mbgKitchenSettings") || "{}");
-      const hasSavedValues = Object.entries(cached).some(([key, value]) => key !== "updatedAt" && key !== "updatedBy" && Boolean(String(value || "").trim()));
-      if (hasSavedValues) {
-        await setDoc(doc(db, "app_settings", "organization"), {
-          ...cached,
-          updatedAt: new Date().toISOString(),
-          updatedBy: normalizeAccountEmail(window.appState.user?.email),
-        }, { merge: true });
-      } else {
-        window.appState.kitchenSettings = {};
+      // Migrate existing per-device settings once if the shared document does not exist yet.
+      try {
+        const cached = JSON.parse(
+          localStorage.getItem("mbgKitchenSettings") || "{}",
+        );
+        const hasSavedValues = Object.entries(cached).some(
+          ([key, value]) =>
+            key !== "updatedAt" &&
+            key !== "updatedBy" &&
+            Boolean(String(value || "").trim()),
+        );
+        if (hasSavedValues) {
+          await setDoc(
+            doc(db, "app_settings", "organization"),
+            {
+              ...cached,
+              updatedAt: new Date().toISOString(),
+              updatedBy: normalizeAccountEmail(window.appState.user?.email),
+            },
+            { merge: true },
+          );
+        } else {
+          window.appState.kitchenSettings = {};
+          window.dispatchEvent(new Event("mbg-kitchen-settings-updated"));
+        }
+      } catch (error) {
+        console.warn("Kitchen settings migration warning:", error);
+        window.appState.kitchenSettings = null;
         window.dispatchEvent(new Event("mbg-kitchen-settings-updated"));
       }
-    } catch (error) {
-      console.warn("Kitchen settings migration warning:", error);
+    },
+    (error) => {
+      console.warn("Kitchen settings listener warning:", error);
       window.appState.kitchenSettings = null;
       window.dispatchEvent(new Event("mbg-kitchen-settings-updated"));
-    }
-  }, (error) => {
-    console.warn("Kitchen settings listener warning:", error);
-    window.appState.kitchenSettings = null;
-    window.dispatchEvent(new Event("mbg-kitchen-settings-updated"));
-  });
+    },
+  );
   onSnapshot(
     collection(db, "mbg_items"),
     (snapshot) => {
@@ -1047,6 +1182,35 @@ function setupFirestoreListeners() {
     },
   );
 
+  if (isOperationalPage() || document.getElementById("adminArrivalList")) {
+    window.appState.barangOperasionalLoaded = false;
+    window.appState.barangOperasionalError = "";
+    onSnapshot(
+      collection(db, "operational_items"),
+      (snapshot) => {
+        window.appState.barangOperasional = snapshot.docs.map((itemDoc) => ({
+          id: itemDoc.id,
+          ...itemDoc.data(),
+        }));
+        window.appState.barangOperasionalLoaded = true;
+        window.appState.barangOperasionalError = "";
+        renderBarangTable();
+        renderAdminArrivalPage();
+      },
+      (error) => {
+        console.warn("Operational items listener warning:", error);
+        window.appState.barangOperasional = [];
+        window.appState.barangOperasionalLoaded = true;
+        window.appState.barangOperasionalError =
+          error.code === "permission-denied"
+            ? "Akses ditolak. Pastikan aturan Firestore operational_items sudah dipublikasikan dan akun Anda aktif."
+            : "Data operasional gagal dimuat. Periksa koneksi lalu muat ulang halaman.";
+        renderBarangTable();
+        renderAdminArrivalPage();
+      },
+    );
+  }
+
   onSnapshot(
     collection(db, "suppliers"),
     (snapshot) => {
@@ -1068,20 +1232,27 @@ function setupFirestoreListeners() {
     },
   );
 
-  onSnapshot(collection(db, "inventory_items"), (snapshot) => {
-    window.appState.inventoryItems = snapshot.docs.map((itemDoc) => ({ id: itemDoc.id, ...itemDoc.data() }));
-    window.appState.inventoryLoaded = true;
-    renderStockTable();
-    renderAdminPwaStock();
-    renderAdminPwaDashboard();
-  }, (error) => {
-    console.warn("Inventory listener warning:", error);
-    window.appState.inventoryItems = [];
-    window.appState.inventoryLoaded = true;
-    renderStockTable();
-    renderAdminPwaStock();
-    renderAdminPwaDashboard();
-  });
+  onSnapshot(
+    collection(db, "inventory_items"),
+    (snapshot) => {
+      window.appState.inventoryItems = snapshot.docs.map((itemDoc) => ({
+        id: itemDoc.id,
+        ...itemDoc.data(),
+      }));
+      window.appState.inventoryLoaded = true;
+      renderStockTable();
+      renderAdminPwaStock();
+      renderAdminPwaDashboard();
+    },
+    (error) => {
+      console.warn("Inventory listener warning:", error);
+      window.appState.inventoryItems = [];
+      window.appState.inventoryLoaded = true;
+      renderStockTable();
+      renderAdminPwaStock();
+      renderAdminPwaDashboard();
+    },
+  );
 
   onSnapshot(
     collection(db, "menus"),
@@ -1105,7 +1276,10 @@ function setupFirestoreListeners() {
   onSnapshot(
     collection(db, "payment_letters"),
     (snapshot) => {
-      window.appState.sppLetters = snapshot.docs.map((letterDoc) => ({ id: letterDoc.id, ...letterDoc.data() }));
+      window.appState.sppLetters = snapshot.docs.map((letterDoc) => ({
+        id: letterDoc.id,
+        ...letterDoc.data(),
+      }));
       window.appState.sppLettersLoaded = true;
       renderSppLetters();
     },
@@ -1142,52 +1316,122 @@ async function ensureInventorySeededFromPlanningItems(items) {
     const migration = await getDoc(migrationRef);
     if (migration.exists()) return;
     const groupedItems = new Map();
-    items.filter((item) => Number(item.datang || 0) > 0 || (Array.isArray(item.stockHistory) && item.stockHistory.length > 0)).forEach((item) => {
-      const key = `${String(item.nama || item.name || "Barang").trim().toLocaleLowerCase("id-ID")}::${String(item.satuan || "unit").trim().toLocaleLowerCase("id-ID")}`;
-      groupedItems.set(key, [...(groupedItems.get(key) || []), item]);
-    });
+    items
+      .filter(
+        (item) =>
+          Number(item.datang || 0) > 0 ||
+          (Array.isArray(item.stockHistory) && item.stockHistory.length > 0),
+      )
+      .forEach((item) => {
+        const key = `${String(item.nama || item.name || "Barang")
+          .trim()
+          .toLocaleLowerCase("id-ID")}::${String(item.satuan || "unit")
+          .trim()
+          .toLocaleLowerCase("id-ID")}`;
+        groupedItems.set(key, [...(groupedItems.get(key) || []), item]);
+      });
     for (const group of groupedItems.values()) {
       const first = group[0];
-      const inventoryId = getInventoryDocumentId(first.nama || first.name || "Barang", first.satuan || "unit");
+      const inventoryId = getInventoryDocumentId(
+        first.nama || first.name || "Barang",
+        first.satuan || "unit",
+      );
       const inventoryRef = doc(db, "inventory_items", inventoryId);
       const existing = await getDoc(inventoryRef);
       if (existing.exists()) continue;
-      const sourceEvents = group.flatMap((item) => {
-        const history = Array.isArray(item.stockHistory) ? [...item.stockHistory] : [];
-        if (!history.length) return [];
-        history.sort((a, b) => String(a.createdAt || a.date || "").localeCompare(String(b.createdAt || b.date || "")));
-        const firstEntry = history[0];
-        const inferredOpening = firstEntry.stockBefore != null
-          ? Number(firstEntry.stockBefore)
-          : firstEntry.type === "masuk"
-            ? Number(firstEntry.stockAfter || 0) - Number(firstEntry.quantity || 0)
-            : firstEntry.type === "keluar"
-              ? Number(firstEntry.stockAfter || 0) + Number(firstEntry.quantity || 0)
-              : Number(firstEntry.stockAfter || 0) - Number(firstEntry.difference || 0);
-        return history.map((entry, index) => ({ ...entry, _sourceOpening: index === 0 ? inferredOpening : 0 }));
-      }).sort((a, b) => String(a.createdAt || a.date || "").localeCompare(String(b.createdAt || b.date || "")));
-      let balance = group.reduce((sum, item) => sum + (Array.isArray(item.stockHistory) && item.stockHistory.length ? 0 : Number(item.datang || 0)), 0)
-        + sourceEvents.reduce((sum, entry) => sum + Number(entry._sourceOpening || 0), 0);
+      const sourceEvents = group
+        .flatMap((item) => {
+          const history = Array.isArray(item.stockHistory)
+            ? [...item.stockHistory]
+            : [];
+          if (!history.length) return [];
+          history.sort((a, b) =>
+            String(a.createdAt || a.date || "").localeCompare(
+              String(b.createdAt || b.date || ""),
+            ),
+          );
+          const firstEntry = history[0];
+          const inferredOpening =
+            firstEntry.stockBefore != null
+              ? Number(firstEntry.stockBefore)
+              : firstEntry.type === "masuk"
+                ? Number(firstEntry.stockAfter || 0) -
+                  Number(firstEntry.quantity || 0)
+                : firstEntry.type === "keluar"
+                  ? Number(firstEntry.stockAfter || 0) +
+                    Number(firstEntry.quantity || 0)
+                  : Number(firstEntry.stockAfter || 0) -
+                    Number(firstEntry.difference || 0);
+          return history.map((entry, index) => ({
+            ...entry,
+            _sourceOpening: index === 0 ? inferredOpening : 0,
+          }));
+        })
+        .sort((a, b) =>
+          String(a.createdAt || a.date || "").localeCompare(
+            String(b.createdAt || b.date || ""),
+          ),
+        );
+      let balance =
+        group.reduce(
+          (sum, item) =>
+            sum +
+            (Array.isArray(item.stockHistory) && item.stockHistory.length
+              ? 0
+              : Number(item.datang || 0)),
+          0,
+        ) +
+        sourceEvents.reduce(
+          (sum, entry) => sum + Number(entry._sourceOpening || 0),
+          0,
+        );
       const stockHistory = [];
       for (const sourceEvent of sourceEvents) {
         const { _sourceOpening, ...entry } = sourceEvent;
         const before = balance;
-        const delta = entry.type === "masuk"
-          ? Number(entry.quantity || 0)
-          : entry.type === "keluar"
-            ? -Number(entry.quantity || 0)
-            : Number(entry.difference || 0);
+        const delta =
+          entry.type === "masuk"
+            ? Number(entry.quantity || 0)
+            : entry.type === "keluar"
+              ? -Number(entry.quantity || 0)
+              : Number(entry.difference || 0);
         balance += delta;
-        stockHistory.push({ ...entry, stockBefore: before, stockAfter: balance, ...(entry.type === "opname" ? { physicalStock: balance } : {}) });
+        stockHistory.push({
+          ...entry,
+          stockBefore: before,
+          stockAfter: balance,
+          ...(entry.type === "opname" ? { physicalStock: balance } : {}),
+        });
       }
-      const currentBalance = group.reduce((sum, item) => sum + Number(item.datang || 0), 0);
+      const currentBalance = group.reduce(
+        (sum, item) => sum + Number(item.datang || 0),
+        0,
+      );
       if (!stockHistory.length && currentBalance > 0) {
         const date = getLocalDateString();
-        stockHistory.push({ type: "masuk", quantity: currentBalance, stockBefore: 0, stockAfter: currentBalance, date, note: "Saldo awal hasil pemisahan stok", createdAt: new Date().toISOString() });
+        stockHistory.push({
+          type: "masuk",
+          quantity: currentBalance,
+          stockBefore: 0,
+          stockAfter: currentBalance,
+          date,
+          note: "Saldo awal hasil pemisahan stok",
+          createdAt: new Date().toISOString(),
+        });
       } else if (Math.abs(balance - currentBalance) > 0.000001) {
         const difference = currentBalance - balance;
         const date = getLocalDateString();
-        stockHistory.push({ type: "opname", quantity: Math.abs(difference), difference, physicalStock: currentBalance, stockBefore: balance, stockAfter: currentBalance, date, note: "Penyesuaian saldo saat pemisahan data stok", createdAt: new Date().toISOString() });
+        stockHistory.push({
+          type: "opname",
+          quantity: Math.abs(difference),
+          difference,
+          physicalStock: currentBalance,
+          stockBefore: balance,
+          stockAfter: currentBalance,
+          date,
+          note: "Penyesuaian saldo saat pemisahan data stok",
+          createdAt: new Date().toISOString(),
+        });
       }
       await setDoc(inventoryRef, {
         nama: first.nama || first.name || "Barang",
@@ -1198,7 +1442,10 @@ async function ensureInventorySeededFromPlanningItems(items) {
         sourcePlanningItemIds: group.map((item) => String(item.id)),
       });
     }
-    await setDoc(migrationRef, { complete: true, completedAt: new Date().toISOString() });
+    await setDoc(migrationRef, {
+      complete: true,
+      completedAt: new Date().toISOString(),
+    });
   } catch (error) {
     console.warn("Initial stock catalog copy failed:", error);
   }
@@ -1225,74 +1472,103 @@ auth.onAuthStateChanged((user) => {
   window.appState.user = null;
   window.appState.access = null;
   renderAccessGate({ checking: true });
-  getAccountAccess(user.email).then(async (access) => {
-    if (validationId !== authValidationVersion) return;
-    if (!access || access.active !== true || ![USER_ROLES.SUPER_ADMIN, USER_ROLES.LOGISTICS].includes(access.role)) {
-      clearDriveToken();
-      window.appState.access = null;
-      accessDeniedNotice = true;
-      showToast("Akun Google ini belum terdaftar atau sedang dinonaktifkan", "error");
-      renderAccessGate({ denied: true });
-      await signOut(auth);
-      return;
-    }
-    window.appState.user = user;
-    window.appState.access = access;
-    accountMonitorUnsubscribe?.();
-    accountMonitorUnsubscribe = onSnapshot(doc(db, "app_users", normalizeAccountEmail(user.email)), async (accountDoc) => {
-      if (!accountDoc.exists() || accountDoc.data().active !== true || ![USER_ROLES.SUPER_ADMIN, USER_ROLES.LOGISTICS].includes(accountDoc.data().role)) {
-        accessDeniedNotice = true;
+  getAccountAccess(user.email)
+    .then(async (access) => {
+      if (validationId !== authValidationVersion) return;
+      if (
+        !access ||
+        access.active !== true ||
+        ![USER_ROLES.SUPER_ADMIN, USER_ROLES.LOGISTICS].includes(access.role)
+      ) {
         clearDriveToken();
-        showToast("Akses akun Anda telah dicabut", "error");
+        window.appState.access = null;
+        accessDeniedNotice = true;
+        showToast(
+          "Akun Google ini belum terdaftar atau sedang dinonaktifkan",
+          "error",
+        );
+        renderAccessGate({ denied: true });
         await signOut(auth);
         return;
       }
-      window.appState.access = { email: normalizeAccountEmail(user.email), ...accountDoc.data() };
+      window.appState.user = user;
+      window.appState.access = access;
+      accountMonitorUnsubscribe?.();
+      accountMonitorUnsubscribe = onSnapshot(
+        doc(db, "app_users", normalizeAccountEmail(user.email)),
+        async (accountDoc) => {
+          if (
+            !accountDoc.exists() ||
+            accountDoc.data().active !== true ||
+            ![USER_ROLES.SUPER_ADMIN, USER_ROLES.LOGISTICS].includes(
+              accountDoc.data().role,
+            )
+          ) {
+            accessDeniedNotice = true;
+            clearDriveToken();
+            showToast("Akses akun Anda telah dicabut", "error");
+            await signOut(auth);
+            return;
+          }
+          window.appState.access = {
+            email: normalizeAccountEmail(user.email),
+            ...accountDoc.data(),
+          };
+          updateRoleNavigation();
+          if (!canUseCurrentPage(window.appState.access.role))
+            renderAccessGate({ restricted: true });
+        },
+        async (error) => {
+          console.error("Pemantauan akses akun gagal:", error);
+          accessDeniedNotice = true;
+          await signOut(auth);
+        },
+      );
+      renderAuthHeader();
+      if (!canUseCurrentPage(access.role)) {
+        updateRoleNavigation();
+        renderAccessGate({ restricted: true });
+        return;
+      }
+      hideAccessGate();
       updateRoleNavigation();
-      if (!canUseCurrentPage(window.appState.access.role)) renderAccessGate({ restricted: true });
-    }, async (error) => {
-      console.error("Pemantauan akses akun gagal:", error);
-      accessDeniedNotice = true;
-      await signOut(auth);
-    });
-    renderAuthHeader();
-    if (!canUseCurrentPage(access.role)) {
-      updateRoleNavigation();
-      renderAccessGate({ restricted: true });
-      return;
-    }
-    hideAccessGate();
-    updateRoleNavigation();
-    if (!firestoreListenersStarted) {
-      firestoreListenersStarted = true;
-      setupFirestoreListeners();
-    }
-    if (isSuperAdmin() && document.getElementById("usersTableBody")) setupUsersListener();
-    window.appState.driveAccessToken = readDriveToken(user.uid);
-    if (document.getElementById("driveStorageStatus")) {
-      if (window.appState.driveAccessToken) {
-        refreshDriveConnection(window.appState.driveAccessToken).catch(showDriveApiError);
+      if (!firestoreListenersStarted) {
+        firestoreListenersStarted = true;
+        setupFirestoreListeners();
+      }
+      if (isSuperAdmin() && document.getElementById("usersTableBody"))
+        setupUsersListener();
+      window.appState.driveAccessToken = readDriveToken(user.uid);
+      if (document.getElementById("driveStorageStatus")) {
+        if (window.appState.driveAccessToken) {
+          refreshDriveConnection(window.appState.driveAccessToken).catch(
+            showDriveApiError,
+          );
+        } else {
+          window.appState.dokumen = [];
+          window.appState.driveLoaded = false;
+          renderDriveQuota();
+          renderDokumenTable();
+        }
       } else {
         window.appState.dokumen = [];
-        window.appState.driveLoaded = false;
         renderDriveQuota();
         renderDokumenTable();
       }
-    } else {
-      window.appState.dokumen = [];
-      renderDriveQuota();
-      renderDokumenTable();
-    }
-    renderGoogleDriveInfo();
-    renderAdminArrivalPage();
-  }).catch(async (error) => {
-    if (validationId !== authValidationVersion) return;
-    console.error("Gagal memeriksa akses akun:", error);
-    accessDeniedNotice = true;
-    renderAccessGate({ denied: true });
-    showToast("Akses akun gagal diperiksa. Pastikan Firebase Firestore Rules sudah diterapkan.", "error");
-    await signOut(auth);
-  });
+      renderGoogleDriveInfo();
+      renderAdminArrivalPage();
+    })
+    .catch(async (error) => {
+      if (validationId !== authValidationVersion) return;
+      console.error("Gagal memeriksa akses akun:", error);
+      accessDeniedNotice = true;
+      renderAccessGate({ denied: true });
+      showToast(
+        "Akses akun gagal diperiksa. Pastikan Firebase Firestore Rules sudah diterapkan.",
+        "error",
+      );
+      await signOut(auth);
+    });
 });
 
 window.handleLoginClick = async function () {
@@ -1303,7 +1579,13 @@ window.handleLoginClick = async function () {
       ? await reauthenticateWithPopup(currentUser, googleProvider)
       : await signInWithPopup(auth, googleProvider);
     const accountAccess = await getAccountAccess(result.user.email);
-    if (!accountAccess || accountAccess.active !== true || ![USER_ROLES.SUPER_ADMIN, USER_ROLES.LOGISTICS].includes(accountAccess.role)) {
+    if (
+      !accountAccess ||
+      accountAccess.active !== true ||
+      ![USER_ROLES.SUPER_ADMIN, USER_ROLES.LOGISTICS].includes(
+        accountAccess.role,
+      )
+    ) {
       clearDriveToken();
       accessDeniedNotice = true;
       await signOut(auth);
@@ -1322,7 +1604,12 @@ window.handleLoginClick = async function () {
       } else {
         window.appState.driveLoaded = true;
       }
-      showToast(currentUser ? "Google Drive tersambung kembali. Login web tetap aktif." : "Login web dan Google Drive berhasil disambungkan", "success");
+      showToast(
+        currentUser
+          ? "Google Drive tersambung kembali. Login web tetap aktif."
+          : "Login web dan Google Drive berhasil disambungkan",
+        "success",
+      );
     } else {
       showToast(
         "Login berhasil, tetapi Google belum memberikan izin Drive. Login Google sekali lagi dan setujui akses Drive.",
@@ -1398,7 +1685,8 @@ function renderGoogleDriveInfo() {
       : window.appState.user
         ? "Login web aktif Â· sesi Google Drive perlu disambungkan"
         : "Belum login Google",
-    "Akun Google": window.appState.user?.email || "Login Google untuk melihat akun",
+    "Akun Google":
+      window.appState.user?.email || "Login Google untuk melihat akun",
     Layanan: "Google Drive API v3",
     "OAuth scope": "https://www.googleapis.com/auth/drive",
     "Pemakaian penyimpanan": quota.usage
@@ -1422,11 +1710,23 @@ function updateDashboardMetrics() {
   const totalBarangElement = document.getElementById("statTotalBarang");
   if (!totalBarangElement) return;
 
-  const isDashboardLoaded = window.appState.barangLoaded && window.appState.suppliersLoaded && window.appState.pmsLoaded;
+  const isDashboardLoaded =
+    window.appState.barangLoaded &&
+    window.appState.suppliersLoaded &&
+    window.appState.pmsLoaded;
   if (!isDashboardLoaded) {
-    ["statTotalBarang", "statTotalSupplier", "statTotalPM", "statTotalDokumen", "adminApprovedBadge", "superAdminApprovedBadge"].forEach((id) => {
+    [
+      "statTotalBarang",
+      "statTotalSupplier",
+      "statTotalPM",
+      "statTotalDokumen",
+      "adminApprovedBadge",
+      "superAdminApprovedBadge",
+    ].forEach((id) => {
       const element = document.getElementById(id);
-      if (element) element.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-base text-sky-500" aria-label="Memuat"></i>';
+      if (element)
+        element.innerHTML =
+          '<i class="fa-solid fa-spinner fa-spin text-base text-sky-500" aria-label="Memuat"></i>';
     });
     const chartLoading = document.getElementById("dashboardLoadingState");
     chartLoading?.classList.remove("hidden");
@@ -1442,7 +1742,8 @@ function updateDashboardMetrics() {
   const totalPenerimaManfaat = window.appState.pms
     .filter((pm) => (pm.status || "Aktif") === "Aktif")
     .reduce((total, pm) => total + getPMTotal(pm), 0);
-  document.getElementById("statTotalPM").innerText = totalPenerimaManfaat.toLocaleString("id-ID");
+  document.getElementById("statTotalPM").innerText =
+    totalPenerimaManfaat.toLocaleString("id-ID");
   document.getElementById("statTotalDokumen").innerText =
     window.appState.dokumen.length;
 
@@ -1473,52 +1774,135 @@ window.renderPaguDashboard = function () {
   }
   document.getElementById("dashboardPaguLoading")?.classList.add("hidden");
   const yearSelect = document.getElementById("dashboardPaguYear");
-  const availableYears = [...new Set(window.appState.pms
-    .filter((pm) => (pm.status || "Aktif") === "Aktif")
-    .map((pm) => String(pm.tanggal || pm.createdAt || new Date().toISOString()).slice(0, 4))
-    .filter((year) => /^\d{4}$/.test(year)))].sort();
+  const availableYears = [
+    ...new Set(
+      window.appState.pms
+        .filter((pm) => (pm.status || "Aktif") === "Aktif")
+        .map((pm) =>
+          String(pm.tanggal || pm.createdAt || new Date().toISOString()).slice(
+            0,
+            4,
+          ),
+        )
+        .filter((year) => /^\d{4}$/.test(year)),
+    ),
+  ].sort();
   const currentYear = String(new Date().getFullYear());
   if (yearSelect) {
     const selectedYear = yearSelect.value || currentYear;
     const years = [...new Set([...availableYears, currentYear])].sort();
-    yearSelect.innerHTML = years.map((year) => `<option value="${year}">${year}</option>`).join("");
-    yearSelect.value = years.includes(selectedYear) ? selectedYear : currentYear;
+    yearSelect.innerHTML = years
+      .map((year) => `<option value="${year}">${year}</option>`)
+      .join("");
+    yearSelect.value = years.includes(selectedYear)
+      ? selectedYear
+      : currentYear;
   }
   const selectedYear = yearSelect?.value || currentYear;
   const monthly = Array.from({ length: 12 }, () => ({ big: 0, small: 0 }));
-  window.appState.pms.filter((pm) => (pm.status || "Aktif") === "Aktif").forEach((pm) => {
-    const rawDate = String(pm.tanggal || pm.createdAt || "");
-    if (rawDate.slice(0, 4) !== selectedYear) return;
-    const month = Number(rawDate.slice(5, 7)) - 1;
-    if (month < 0 || month > 11) return;
-    if (pm.jenis === "SD") {
-      monthly[month].big += Number(pm.kelas46 || 0) + Number(pm.guruTendik || 0);
-      monthly[month].small += Number(pm.kelas13 || 0);
-    } else if (pm.jenis === "B3") {
-      monthly[month].big += Number(pm.bumil || 0) + Number(pm.busui || 0);
-      monthly[month].small += Number(pm.balita || 0);
-    } else if (["SMP", "SMA"].includes(pm.jenis)) {
-      monthly[month].big += Number(pm.target || 0) + Number(pm.guruTendik || 0);
-    } else if (pm.jenis === "TK") {
-      monthly[month].big += Number(pm.guruTendik || 0);
-      monthly[month].small += Number(pm.target || 0);
-    }
-  });
-  const months = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+  window.appState.pms
+    .filter((pm) => (pm.status || "Aktif") === "Aktif")
+    .forEach((pm) => {
+      const rawDate = String(pm.tanggal || pm.createdAt || "");
+      if (rawDate.slice(0, 4) !== selectedYear) return;
+      const month = Number(rawDate.slice(5, 7)) - 1;
+      if (month < 0 || month > 11) return;
+      if (pm.jenis === "SD") {
+        monthly[month].big +=
+          Number(pm.kelas46 || 0) + Number(pm.guruTendik || 0);
+        monthly[month].small += Number(pm.kelas13 || 0);
+      } else if (pm.jenis === "B3") {
+        monthly[month].big += Number(pm.bumil || 0) + Number(pm.busui || 0);
+        monthly[month].small += Number(pm.balita || 0);
+      } else if (["SMP", "SMA"].includes(pm.jenis)) {
+        monthly[month].big +=
+          Number(pm.target || 0) + Number(pm.guruTendik || 0);
+      } else if (pm.jenis === "TK") {
+        monthly[month].big += Number(pm.guruTendik || 0);
+        monthly[month].small += Number(pm.target || 0);
+      }
+    });
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "Mei",
+    "Jun",
+    "Jul",
+    "Agu",
+    "Sep",
+    "Okt",
+    "Nov",
+    "Des",
+  ];
   const totalBig = monthly.reduce((sum, row) => sum + row.big, 0);
   const totalSmall = monthly.reduce((sum, row) => sum + row.small, 0);
   const totalPagu = totalBig * 10000 + totalSmall * 8000;
   summary.innerHTML = `<div class="rounded-xl bg-emerald-50 p-4"><p class="text-[10px] font-bold uppercase text-emerald-700">Porsi Besar</p><p class="mt-1 text-xl font-extrabold text-emerald-800">${totalBig.toLocaleString("id-ID")}</p></div><div class="rounded-xl bg-sky-50 p-4"><p class="text-[10px] font-bold uppercase text-sky-700">Porsi Kecil</p><p class="mt-1 text-xl font-extrabold text-sky-800">${totalSmall.toLocaleString("id-ID")}</p></div><div class="rounded-xl bg-amber-50 p-4"><p class="text-[10px] font-bold uppercase text-amber-700">Total Pagu</p><p class="mt-1 text-lg font-extrabold text-amber-800">Rp ${totalPagu.toLocaleString("id-ID")}</p><p class="mt-1 text-[10px] text-amber-700">Besar Rp10.000 Â· Kecil Rp8.000</p></div>`;
   if (typeof Chart === "undefined") return;
-  if (window.appState.dashboardPaguChart) window.appState.dashboardPaguChart.destroy();
+  if (window.appState.dashboardPaguChart)
+    window.appState.dashboardPaguChart.destroy();
   window.appState.dashboardPaguChart = new Chart(canvas.getContext("2d"), {
     type: "bar",
-    data: { labels: months, datasets: [
-      { label: "Porsi besar", data: monthly.map((row) => row.big), backgroundColor: "#10b981", borderRadius: 5, yAxisID: "y" },
-      { label: "Porsi kecil", data: monthly.map((row) => row.small), backgroundColor: "#38bdf8", borderRadius: 5, yAxisID: "y" },
-      { label: "Pagu (juta rupiah)", data: monthly.map((row) => (row.big * 10000 + row.small * 8000) / 1000000), type: "line", borderColor: "#f59e0b", backgroundColor: "#f59e0b", tension: 0.3, yAxisID: "y1" },
-    ] },
-    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false }, scales: { y: { beginAtZero: true, title: { display: true, text: "Jumlah porsi" } }, y1: { beginAtZero: true, position: "right", grid: { drawOnChartArea: false }, title: { display: true, text: "Pagu (juta Rp)" } } }, plugins: { legend: { position: "bottom" }, tooltip: { callbacks: { label: (context) => context.datasetIndex === 2 ? `${context.dataset.label}: Rp ${(Number(context.raw) * 1000000).toLocaleString("id-ID")}` : `${context.dataset.label}: ${Number(context.raw).toLocaleString("id-ID")}` } } } },
+    data: {
+      labels: months,
+      datasets: [
+        {
+          label: "Porsi besar",
+          data: monthly.map((row) => row.big),
+          backgroundColor: "#10b981",
+          borderRadius: 5,
+          yAxisID: "y",
+        },
+        {
+          label: "Porsi kecil",
+          data: monthly.map((row) => row.small),
+          backgroundColor: "#38bdf8",
+          borderRadius: 5,
+          yAxisID: "y",
+        },
+        {
+          label: "Pagu (juta rupiah)",
+          data: monthly.map(
+            (row) => (row.big * 10000 + row.small * 8000) / 1000000,
+          ),
+          type: "line",
+          borderColor: "#f59e0b",
+          backgroundColor: "#f59e0b",
+          tension: 0.3,
+          yAxisID: "y1",
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: "Jumlah porsi" },
+        },
+        y1: {
+          beginAtZero: true,
+          position: "right",
+          grid: { drawOnChartArea: false },
+          title: { display: true, text: "Pagu (juta Rp)" },
+        },
+      },
+      plugins: {
+        legend: { position: "bottom" },
+        tooltip: {
+          callbacks: {
+            label: (context) =>
+              context.datasetIndex === 2
+                ? `${context.dataset.label}: Rp ${(Number(context.raw) * 1000000).toLocaleString("id-ID")}`
+                : `${context.dataset.label}: ${Number(context.raw).toLocaleString("id-ID")}`,
+          },
+        },
+      },
+    },
   });
 };
 
@@ -1645,8 +2029,17 @@ function renderBarangTable() {
   const tbody = document.getElementById("barangTableBody");
   if (!tbody) return;
 
-  if (!window.appState.barangLoaded || !window.appState.inventoryLoaded) {
+  const currentItems = getCurrentBarangItems();
+  const currentItemsLoaded = isOperationalPage()
+    ? window.appState.barangOperasionalLoaded
+    : window.appState.barangLoaded;
+  const deleteType = isOperationalPage() ? "operasional" : "barang";
+  if (!currentItemsLoaded) {
     tbody.innerHTML = `<tr><td colspan="8" class="px-5 py-10 text-center"><span class="inline-flex items-center gap-2 rounded-xl bg-sky-50 px-4 py-3 text-xs font-semibold text-sky-700"><i class="fa-solid fa-spinner fa-spin"></i>Memuat data barang dari Firebase...</span></td></tr>`;
+    return;
+  }
+  if (isOperationalPage() && window.appState.barangOperasionalError) {
+    tbody.innerHTML = `<tr><td colspan="8" class="px-5 py-8 text-center text-xs font-semibold text-amber-800">${escapeHtml(window.appState.barangOperasionalError)}</td></tr>`;
     return;
   }
 
@@ -1655,15 +2048,18 @@ function renderBarangTable() {
   ).toLowerCase();
   const filterTipe =
     document.getElementById("filterTipeBarang")?.value || "ALL";
-  const dateFrom = document.getElementById("filterTanggalMulaiBarang")?.value || "";
-  const dateTo = document.getElementById("filterTanggalAkhirBarang")?.value || "";
+  const dateFrom =
+    document.getElementById("filterTanggalMulaiBarang")?.value || "";
+  const dateTo =
+    document.getElementById("filterTanggalAkhirBarang")?.value || "";
 
-  const filtered = window.appState.barang.filter((item) => {
+  const filtered = currentItems.filter((item) => {
     const name = (item.nama || item.name || "").toLowerCase();
     const matchesSearch = name.includes(searchTerm);
     const matchesTipe = filterTipe === "ALL" || item.tipe === filterTipe;
     const itemDate = String(item.tanggal || "");
-    const matchesDate = (!dateFrom || itemDate >= dateFrom) && (!dateTo || itemDate <= dateTo);
+    const matchesDate =
+      (!dateFrom || itemDate >= dateFrom) && (!dateTo || itemDate <= dateTo);
     return matchesSearch && matchesTipe && matchesDate;
   });
 
@@ -1675,14 +2071,25 @@ function renderBarangTable() {
   tbody.innerHTML = filtered
     .map((item) => {
       const latestArrival = getLatestArrival(item);
-      const firebasePhoto = item.statusAdmin === "ACC"
-        ? (latestArrival?.photoDataUrl || (latestArrival?.photoId ? window.appState.arrivalPhotoCache?.[latestArrival.photoId] : "") || latestArrival?.photoUrl || item.fotoPenerimaan || item.foto || item.fotoUrl || item.imageUrl || (latestArrival?.photoId ? "" : item.img) || "")
-        : "";
+      const firebasePhoto =
+        item.statusAdmin === "ACC"
+          ? latestArrival?.photoDataUrl ||
+            (latestArrival?.photoId
+              ? window.appState.arrivalPhotoCache?.[latestArrival.photoId]
+              : "") ||
+            latestArrival?.photoUrl ||
+            item.fotoPenerimaan ||
+            item.foto ||
+            item.fotoUrl ||
+            item.imageUrl ||
+            (latestArrival?.photoId ? "" : item.img) ||
+            ""
+          : "";
       const photo = firebasePhoto
         ? `<img src="${escapeHtml(firebasePhoto)}" alt="Foto ${escapeHtml(item.nama || item.name || "barang")}" loading="lazy" class="w-10 h-10 rounded-xl object-cover border border-slate-200 group-hover:scale-105 transition-transform" onerror="this.outerHTML='<span class=&quot;flex w-10 h-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-100 text-slate-400&quot;><i class=&quot;fa-solid fa-box&quot;></i></span>'">`
         : latestArrival?.photoId && item.statusAdmin === "ACC"
           ? `<span data-arrival-photo-id="${escapeHtml(latestArrival.photoId)}" class="flex w-10 h-10 items-center justify-center rounded-xl border border-sky-100 bg-sky-50 text-sky-600"><i class="fa-solid fa-spinner fa-spin"></i></span>`
-        : `<span class="flex w-10 h-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-100 text-slate-400"><i class="fa-solid fa-box"></i></span>`;
+          : `<span class="flex w-10 h-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-100 text-slate-400"><i class="fa-solid fa-box"></i></span>`;
       return `
         <tr class="hover:bg-slate-50/80 transition-colors">
           <td class="py-3 px-5">
@@ -1713,7 +2120,7 @@ function renderBarangTable() {
             <button onclick="editBarang('${item.id}')" class="p-2 text-sky-600 hover:bg-sky-50 rounded-lg transition-colors" title="Edit Data">
               <i class="fa-solid fa-pen-to-square"></i>
             </button>
-            <button onclick="promptDelete('barang', '${item.id}', '${item.nama || item.name}')" class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Hapus Data">
+            <button onclick="promptDelete('${deleteType}', '${item.id}', '${item.nama || item.name}')" class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Hapus Data">
               <i class="fa-solid fa-trash-can"></i>
             </button>
           </td>
@@ -1725,21 +2132,33 @@ function renderBarangTable() {
 }
 
 function getLatestArrival(item) {
-  const history = Array.isArray(item?.arrivalHistory) ? item.arrivalHistory : [];
-  return [...history].sort((a, b) =>
-    String(b.recordedAt || b.receivedAt || "").localeCompare(String(a.recordedAt || a.receivedAt || "")),
-  )[0] || null;
+  const history = Array.isArray(item?.arrivalHistory)
+    ? item.arrivalHistory
+    : [];
+  return (
+    [...history].sort((a, b) =>
+      String(b.recordedAt || b.receivedAt || "").localeCompare(
+        String(a.recordedAt || a.receivedAt || ""),
+      ),
+    )[0] || null
+  );
 }
 
 function getItemReceivedQuantity(item) {
-  const arrivals = Array.isArray(item?.arrivalHistory) ? item.arrivalHistory : [];
+  const arrivals = Array.isArray(item?.arrivalHistory)
+    ? item.arrivalHistory
+    : [];
   return arrivals.length
     ? arrivals.reduce((sum, arrival) => sum + Number(arrival.quantity || 0), 0)
     : Number(item?.datang || 0);
 }
 
 function getInventoryDocumentId(name, unit) {
-  const normalized = `${String(name || "").trim().toLocaleLowerCase("id-ID")}::${String(unit || "").trim().toLocaleLowerCase("id-ID")}`;
+  const normalized = `${String(name || "")
+    .trim()
+    .toLocaleLowerCase("id-ID")}::${String(unit || "")
+    .trim()
+    .toLocaleLowerCase("id-ID")}`;
   let hash = 2166136261;
   for (let index = 0; index < normalized.length; index += 1) {
     hash = Math.imul(hash ^ normalized.charCodeAt(index), 16777619);
@@ -1747,7 +2166,9 @@ function getInventoryDocumentId(name, unit) {
   return `stock_${(hash >>> 0).toString(36)}`;
 }
 
-function getLowStockInventoryItems(items = window.appState.inventoryItems || []) {
+function getLowStockInventoryItems(
+  items = window.appState.inventoryItems || [],
+) {
   return items.filter((item) => {
     const minimum = Number(item.minimumStock || 0);
     return minimum > 0 && Number(item.datang || 0) <= minimum;
@@ -1755,77 +2176,159 @@ function getLowStockInventoryItems(items = window.appState.inventoryItems || [])
 }
 
 async function loadLatestArrivalPhotos(items) {
-  const photoIds = [...new Set(items
-    .filter((item) => item.statusAdmin === "ACC")
-    .map((item) => getLatestArrival(item)?.photoId)
-    .filter(Boolean))];
-  await Promise.all(photoIds.map(async (photoId) => {
-    try {
-      const photoSnapshot = await getDoc(doc(db, "barang_arrival_photos", String(photoId)));
-      const photoData = photoSnapshot.exists() ? photoSnapshot.data() : null;
-      const dataUrl = photoData?.dataUrl || photoData?.base64 || photoData?.foto || photoData?.image || "";
-      if (!dataUrl) return;
-      window.appState.arrivalPhotoCache ||= {};
-      window.appState.arrivalPhotoCache[photoId] = dataUrl;
-      const parentItem = items.find((item) => getLatestArrival(item)?.photoId === photoId);
-      if (parentItem) {
-        const legacyImage = parentItem.img;
-        const shouldReplaceLegacy = legacyImage && legacyImage !== dataUrl;
-        const updatedParent = {
-          ...parentItem,
-          ...(shouldReplaceLegacy ? { img: dataUrl } : {}),
-          ...(!parentItem.fotoPenerimaan ? { fotoPenerimaan: dataUrl } : {}),
-          arrivalHistory: parentItem.arrivalHistory.map((arrival) =>
-            arrival.photoId === photoId ? { ...arrival, photoDataUrl: dataUrl } : arrival,
-          ),
-        };
-        window.appState.barang = window.appState.barang.map((item) =>
-          String(item.id) === String(parentItem.id) ? updatedParent : item,
+  const photoIds = [
+    ...new Set(
+      items
+        .filter((item) => item.statusAdmin === "ACC")
+        .map((item) => getLatestArrival(item)?.photoId)
+        .filter(Boolean),
+    ),
+  ];
+  await Promise.all(
+    photoIds.map(async (photoId) => {
+      try {
+        const photoSnapshot = await getDoc(
+          doc(db, "barang_arrival_photos", String(photoId)),
         );
-        setDoc(doc(db, "mbg_items", String(parentItem.id)), updatedParent).catch((error) =>
-          console.warn("Could not sync the latest Firebase photo to its item:", error),
+        const photoData = photoSnapshot.exists() ? photoSnapshot.data() : null;
+        const dataUrl =
+          photoData?.dataUrl ||
+          photoData?.base64 ||
+          photoData?.foto ||
+          photoData?.image ||
+          "";
+        if (!dataUrl) return;
+        window.appState.arrivalPhotoCache ||= {};
+        window.appState.arrivalPhotoCache[photoId] = dataUrl;
+        const parentItem = items.find(
+          (item) => getLatestArrival(item)?.photoId === photoId,
         );
+        if (parentItem) {
+          const legacyImage = parentItem.img;
+          const shouldReplaceLegacy = legacyImage && legacyImage !== dataUrl;
+          const updatedParent = {
+            ...parentItem,
+            ...(shouldReplaceLegacy ? { img: dataUrl } : {}),
+            ...(!parentItem.fotoPenerimaan ? { fotoPenerimaan: dataUrl } : {}),
+            arrivalHistory: parentItem.arrivalHistory.map((arrival) =>
+              arrival.photoId === photoId
+                ? { ...arrival, photoDataUrl: dataUrl }
+                : arrival,
+            ),
+          };
+          window.appState.barang = window.appState.barang.map((item) =>
+            String(item.id) === String(parentItem.id) ? updatedParent : item,
+          );
+          setDoc(
+            doc(db, "mbg_items", String(parentItem.id)),
+            updatedParent,
+          ).catch((error) =>
+            console.warn(
+              "Could not sync the latest Firebase photo to its item:",
+              error,
+            ),
+          );
+        }
+        document
+          .querySelectorAll(`[data-arrival-photo-id="${CSS.escape(photoId)}"]`)
+          .forEach((placeholder) => {
+            const image = document.createElement("img");
+            image.src = dataUrl;
+            image.alt = "Foto bukti penerimaan";
+            image.loading = "lazy";
+            image.className =
+              "h-10 w-10 rounded-xl border border-slate-200 object-cover";
+            image.onerror = () => {
+              placeholder.innerHTML = '<i class="fa-solid fa-box"></i>';
+              placeholder.className =
+                "flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-100 text-slate-400";
+            };
+            placeholder.replaceWith(image);
+          });
+      } catch (error) {
+        console.warn("Could not load arrival photo from Firestore:", error);
       }
-      document.querySelectorAll(`[data-arrival-photo-id="${CSS.escape(photoId)}"]`).forEach((placeholder) => {
-        const image = document.createElement("img");
-        image.src = dataUrl;
-        image.alt = "Foto bukti penerimaan";
-        image.loading = "lazy";
-        image.className = "h-10 w-10 rounded-xl border border-slate-200 object-cover";
-        image.onerror = () => {
-          placeholder.innerHTML = '<i class="fa-solid fa-box"></i>';
-          placeholder.className = "flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-100 text-slate-400";
-        };
-        placeholder.replaceWith(image);
-      });
-    } catch (error) {
-      console.warn("Could not load arrival photo from Firestore:", error);
-    }
-  }));
+    }),
+  );
 }
+
+function getAdminArrivalType() {
+  return document.getElementById("adminArrivalType")?.value === "operasional"
+    ? "operasional"
+    : "bahan_baku";
+}
+
+function getAdminArrivalItems(type = getAdminArrivalType()) {
+  return type === "operasional"
+    ? window.appState.barangOperasional
+    : window.appState.barang;
+}
+
+window.setAdminArrivalType = function (type) {
+  if (!["bahan_baku", "operasional"].includes(type)) return;
+  const selectedType = document.getElementById("adminArrivalType");
+  if (selectedType) selectedType.value = type;
+  const isOperational = type === "operasional";
+  [
+    [document.getElementById("adminArrivalTypeRaw"), !isOperational],
+    [document.getElementById("adminArrivalTypeOperational"), isOperational],
+  ].forEach(([button, active]) => {
+    if (!button) return;
+    button.setAttribute("aria-pressed", String(active));
+    button.classList.toggle("bg-white", active);
+    button.classList.toggle("text-sky-800", active);
+    button.classList.toggle("shadow-sm", active);
+    button.classList.toggle("text-slate-500", !active);
+    button.classList.toggle("hover:text-slate-700", !active);
+  });
+  adminArrivalFilterKey = "";
+  adminArrivalVisibleCount = ADMIN_ARRIVAL_PAGE_SIZE;
+  renderAdminArrivalPage();
+};
 
 function renderAdminArrivalPage() {
   const list = document.getElementById("adminArrivalList");
   if (!list) return;
   const count = document.getElementById("adminArrivalCount");
+  const type = getAdminArrivalType();
+  const typeLabel = type === "operasional" ? "operasional" : "bahan baku";
+  const isLoaded =
+    type === "operasional"
+      ? window.appState.barangOperasionalLoaded
+      : window.appState.barangLoaded;
+  if (!isLoaded) {
+    if (count) count.textContent = `Memuat daftar ${typeLabel}...`;
+    list.innerHTML = `<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Memuat daftar ${typeLabel}...</div>`;
+    return;
+  }
+  if (type === "operasional" && window.appState.barangOperasionalError) {
+    if (count) count.textContent = "Data operasional tidak dapat diakses";
+    list.innerHTML = `<div class="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900"><p class="font-bold"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Gagal memuat barang operasional</p><p class="mt-2 text-xs leading-relaxed">${escapeHtml(window.appState.barangOperasionalError)}</p></div>`;
+    return;
+  }
 
   const dateFilter = document.getElementById("adminArrivalFilterDate");
   if (dateFilter && !dateFilter.value) dateFilter.value = getLocalDateString();
   const selectedDate = dateFilter?.value || getLocalDateString();
-  const endDate = document.getElementById("adminArrivalFilterDateTo")?.value || selectedDate;
+  const endDate =
+    document.getElementById("adminArrivalFilterDateTo")?.value || selectedDate;
   if (endDate < selectedDate) {
-    if (count) count.textContent = "Tanggal akhir harus sama atau setelah tanggal awal";
+    if (count)
+      count.textContent = "Tanggal akhir harus sama atau setelah tanggal awal";
     list.innerHTML = `<div class="rounded-2xl border border-amber-200 bg-amber-50 p-8 text-center text-sm font-semibold text-amber-800">Periksa rentang tanggal yang dipilih.</div>`;
     return;
   }
-  const pendingItems = window.appState.barang.filter((item) =>
-    (item.statusAdmin || "Pending") === "Pending" && String(item.tanggal || "") >= selectedDate && String(item.tanggal || "") <= endDate,
+  const pendingItems = getAdminArrivalItems(type).filter(
+    (item) =>
+      (item.statusAdmin || "Pending") === "Pending" &&
+      String(item.tanggal || "") >= selectedDate &&
+      String(item.tanggal || "") <= endDate,
   );
 
   const query = (document.getElementById("adminArrivalSearch")?.value || "")
     .trim()
     .toLocaleLowerCase("id-ID");
-  const filterKey = `${selectedDate}|${endDate}|${query}`;
+  const filterKey = `${type}|${selectedDate}|${endDate}|${query}`;
   if (adminArrivalFilterKey !== filterKey) {
     adminArrivalFilterKey = filterKey;
     adminArrivalVisibleCount = ADMIN_ARRIVAL_PAGE_SIZE;
@@ -1834,7 +2337,8 @@ function renderAdminArrivalPage() {
     (item.nama || item.name || "").toLocaleLowerCase("id-ID").includes(query),
   );
   adminArrivalObserver?.disconnect();
-  if (count) count.textContent = `${filteredItems.length.toLocaleString("id-ID")} barang Pending, ${formatDateID(selectedDate)}${endDate !== selectedDate ? ` â€“ ${formatDateID(endDate)}` : ""}`;
+  if (count)
+    count.textContent = `${filteredItems.length.toLocaleString("id-ID")} barang Pending, ${formatDateID(selectedDate)}${endDate !== selectedDate ? ` â€“ ${formatDateID(endDate)}` : ""}`;
 
   if (!filteredItems.length) {
     list.innerHTML = `<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center"><i class="fa-solid fa-box-open text-2xl text-slate-300"></i><p class="mt-3 text-sm font-semibold text-slate-600">${pendingItems.length ? "Barang tidak ditemukan" : "Tidak ada barang Pending pada rentang tanggal ini"}</p><p class="mt-1 text-xs text-slate-400">Pilih tanggal lain untuk melihat barang Pending.</p></div>`;
@@ -1842,27 +2346,33 @@ function renderAdminArrivalPage() {
   }
 
   const visibleItems = filteredItems.slice(0, adminArrivalVisibleCount);
-  const cards = visibleItems.map((item) => {
-    const itemId = escapeHtml(item.id);
-    const arrivalHistory = Array.isArray(item.arrivalHistory)
-      ? [...item.arrivalHistory].sort((a, b) =>
-          String(b.recordedAt || b.receivedAt || "").localeCompare(
-            String(a.recordedAt || a.receivedAt || ""),
-          ),
-        )
-      : [];
-    const latest = arrivalHistory[0];
-    const latestDate = latest?.receivedAt
-      ? new Date(latest.receivedAt)
-      : null;
-    const latestLabel = latestDate && !Number.isNaN(latestDate.getTime())
-      ? latestDate.toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })
-      : "Belum ada penerimaan tercatat";
-    const latestDetail = latest
-      ? `<p class="mt-1 text-[11px] text-slate-500">Terakhir: ${Number(latest.quantity || 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")} Â· ${escapeHtml(latestLabel)}</p>${latest.photoId ? `<button type="button" onclick="viewAdminArrivalPhoto('${escapeHtml(latest.photoId)}')" class="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700"><i class="fa-regular fa-image"></i>Lihat foto terakhir</button>` : ""}`
-      : `<p class="mt-1 text-[11px] text-slate-500">${escapeHtml(latestLabel)}</p>`;
-    return `<article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><div class="flex items-start justify-between gap-3"><div class="min-w-0"><div class="flex flex-wrap items-center gap-2"><h3 class="font-bold text-slate-800">${escapeHtml(item.nama || item.name || "Barang")}</h3><span class="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-bold text-amber-700">Pending</span></div><p class="mt-1 text-xs text-slate-500">${escapeHtml(item.tipe || "Utama")} Â· ${escapeHtml(item.satuan || "unit")}</p><p class="mt-3 text-sm font-bold text-slate-700">Total datang: ${getItemReceivedQuantity(item).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</p>${latestDetail}</div><i class="fa-solid fa-boxes-stacked mt-1 text-xl text-sky-600"></i></div><button type="button" onclick="openAdminArrival('${itemId}')" class="mt-4 w-full rounded-xl bg-sky-700 px-4 py-3 text-sm font-bold text-white hover:bg-sky-800"><i class="fa-solid fa-camera mr-2"></i>Catat barang datang</button></article>`;
-  }).join("");
+  const cards = visibleItems
+    .map((item) => {
+      const itemId = escapeHtml(item.id);
+      const arrivalHistory = Array.isArray(item.arrivalHistory)
+        ? [...item.arrivalHistory].sort((a, b) =>
+            String(b.recordedAt || b.receivedAt || "").localeCompare(
+              String(a.recordedAt || a.receivedAt || ""),
+            ),
+          )
+        : [];
+      const latest = arrivalHistory[0];
+      const latestDate = latest?.receivedAt
+        ? new Date(latest.receivedAt)
+        : null;
+      const latestLabel =
+        latestDate && !Number.isNaN(latestDate.getTime())
+          ? latestDate.toLocaleString("id-ID", {
+              dateStyle: "medium",
+              timeStyle: "short",
+            })
+          : "Belum ada penerimaan tercatat";
+      const latestDetail = latest
+        ? `<p class="mt-1 text-[11px] text-slate-500">Terakhir: ${Number(latest.quantity || 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")} Â· ${escapeHtml(latestLabel)}</p>${latest.photoId ? `<button type="button" onclick="viewAdminArrivalPhoto('${escapeHtml(latest.photoId)}')" class="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700"><i class="fa-regular fa-image"></i>Lihat foto terakhir</button>` : ""}`
+        : `<p class="mt-1 text-[11px] text-slate-500">${escapeHtml(latestLabel)}</p>`;
+      return `<article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><div class="flex items-start justify-between gap-3"><div class="min-w-0"><div class="flex flex-wrap items-center gap-2"><h3 class="font-bold text-slate-800">${escapeHtml(item.nama || item.name || "Barang")}</h3><span class="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-bold text-amber-700">Pending</span></div><p class="mt-1 text-xs text-slate-500">${escapeHtml(item.tipe || "Utama")} Â· ${escapeHtml(item.satuan || "unit")}</p><p class="mt-3 text-sm font-bold text-slate-700">Total datang: ${getItemReceivedQuantity(item).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</p>${latestDetail}</div><i class="fa-solid fa-boxes-stacked mt-1 text-xl text-sky-600"></i></div><button type="button" onclick="openAdminArrival('${itemId}')" class="mt-4 w-full rounded-xl bg-sky-700 px-4 py-3 text-sm font-bold text-white hover:bg-sky-800"><i class="fa-solid fa-camera mr-2"></i>Catat barang datang</button></article>`;
+    })
+    .join("");
   const hasMore = visibleItems.length < filteredItems.length;
   list.innerHTML = `${cards}${hasMore ? `<div id="adminArrivalScrollSentinel" class="py-4 text-center text-xs text-slate-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Gulir untuk memuat barang berikutnya</div>` : `<p class="py-3 text-center text-[10px] text-slate-400">Semua barang sudah ditampilkan</p>`}`;
   observeAdminArrivalSentinel();
@@ -1878,7 +2388,14 @@ window.showAdminPwaTab = function (tab) {
   if (!panels[tab]) return;
   Object.entries(panels).forEach(([key, id]) => {
     document.getElementById(id)?.classList.toggle("hidden", key !== tab);
-    const button = document.getElementById({ dashboard: "adminNavDashboard", arrival: "adminNavArrival", stock: "adminNavStock", profile: "adminNavProfile" }[key]);
+    const button = document.getElementById(
+      {
+        dashboard: "adminNavDashboard",
+        arrival: "adminNavArrival",
+        stock: "adminNavStock",
+        profile: "adminNavProfile",
+      }[key],
+    );
     button?.classList.toggle("text-sky-700", key === tab);
     button?.classList.toggle("text-slate-400", key !== tab);
     button?.classList.toggle("bg-sky-50", key === tab);
@@ -1900,24 +2417,42 @@ window.showAdminPwaTab = function (tab) {
 
 function renderAdminPwaDashboard() {
   if (!document.getElementById("adminDashboardPanel")) return;
-  const fields = ["adminDashTotalBarang", "adminDashPending", "adminDashArrivalsToday", "adminDashStockAvailable", "adminDashLowStock"];
+  const fields = [
+    "adminDashTotalBarang",
+    "adminDashPending",
+    "adminDashArrivalsToday",
+    "adminDashStockAvailable",
+    "adminDashLowStock",
+  ];
   if (!window.appState.barangLoaded) {
     fields.forEach((id) => {
       const element = document.getElementById(id);
-      if (element) element.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-base"></i>';
+      if (element)
+        element.innerHTML =
+          '<i class="fa-solid fa-spinner fa-spin text-base"></i>';
     });
     return;
   }
   const items = window.appState.barang;
   const today = getLocalDateString();
-  const arrivals = items.flatMap((item) => (Array.isArray(item.arrivalHistory) ? item.arrivalHistory : []).map((entry) => ({ item, entry })));
+  const arrivals = items.flatMap((item) =>
+    (Array.isArray(item.arrivalHistory) ? item.arrivalHistory : []).map(
+      (entry) => ({ item, entry }),
+    ),
+  );
   const inventoryItems = window.appState.inventoryItems || [];
   const lowStockItems = getLowStockInventoryItems(inventoryItems);
   const values = {
     adminDashTotalBarang: items.length,
-    adminDashPending: items.filter((item) => (item.statusAdmin || "Pending") === "Pending").length,
-    adminDashArrivalsToday: arrivals.filter(({ entry }) => String(entry.receivedDate || "") === today).length,
-    adminDashStockAvailable: inventoryItems.filter((item) => Number(item.datang || 0) > 0).length,
+    adminDashPending: items.filter(
+      (item) => (item.statusAdmin || "Pending") === "Pending",
+    ).length,
+    adminDashArrivalsToday: arrivals.filter(
+      ({ entry }) => String(entry.receivedDate || "") === today,
+    ).length,
+    adminDashStockAvailable: inventoryItems.filter(
+      (item) => Number(item.datang || 0) > 0,
+    ).length,
     adminDashLowStock: lowStockItems.length,
   };
   Object.entries(values).forEach(([id, value]) => {
@@ -1928,55 +2463,125 @@ function renderAdminPwaDashboard() {
   const lowStockPanel = document.getElementById("adminDashLowStockList");
   if (lowStockPanel) {
     lowStockPanel.innerHTML = lowStockItems.length
-      ? lowStockItems.slice(0, 5).map((item) => `<div class="flex items-center justify-between gap-2 border-b border-amber-100 py-2 last:border-0"><span class="min-w-0 truncate text-xs font-semibold text-slate-700">${escapeHtml(item.nama || item.name || "Barang")}</span><span class="shrink-0 text-[10px] font-bold text-amber-700">${Number(item.datang || 0).toLocaleString("id-ID")} / ${Number(item.minimumStock || 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</span></div>`).join("")
+      ? lowStockItems
+          .slice(0, 5)
+          .map(
+            (item) =>
+              `<div class="flex items-center justify-between gap-2 border-b border-amber-100 py-2 last:border-0"><span class="min-w-0 truncate text-xs font-semibold text-slate-700">${escapeHtml(item.nama || item.name || "Barang")}</span><span class="shrink-0 text-[10px] font-bold text-amber-700">${Number(item.datang || 0).toLocaleString("id-ID")} / ${Number(item.minimumStock || 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</span></div>`,
+          )
+          .join("")
       : '<p class="py-3 text-center text-xs text-emerald-700">Tidak ada stok di bawah batas minimum.</p>';
   }
   if (!recent) return;
-  const latest = arrivals.sort((a, b) => String(b.entry.recordedAt || b.entry.receivedAt || "").localeCompare(String(a.entry.recordedAt || a.entry.receivedAt || ""))).slice(0, 5);
-  recent.innerHTML = latest.length ? latest.map(({ item, entry }) => {
-    const when = entry.receivedAt ? new Date(entry.receivedAt) : null;
-    const timeText = when && !Number.isNaN(when.getTime()) ? when.toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" }) : "Waktu tidak tersedia";
-    return `<article class="flex items-center justify-between gap-3 border-b border-slate-100 py-3 last:border-0"><div class="min-w-0"><p class="truncate text-xs font-bold text-slate-700">${escapeHtml(item.nama || item.name || "Barang")}</p><p class="mt-1 text-[10px] text-slate-400">${escapeHtml(timeText)}</p></div><span class="shrink-0 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-[10px] font-bold text-emerald-700">+${Number(entry.quantity || 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</span></article>`;
-  }).join("") : '<p class="py-5 text-center text-xs text-slate-400">Belum ada riwayat penerimaan barang.</p>';
+  const latest = arrivals
+    .sort((a, b) =>
+      String(b.entry.recordedAt || b.entry.receivedAt || "").localeCompare(
+        String(a.entry.recordedAt || a.entry.receivedAt || ""),
+      ),
+    )
+    .slice(0, 5);
+  recent.innerHTML = latest.length
+    ? latest
+        .map(({ item, entry }) => {
+          const when = entry.receivedAt ? new Date(entry.receivedAt) : null;
+          const timeText =
+            when && !Number.isNaN(when.getTime())
+              ? when.toLocaleString("id-ID", {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })
+              : "Waktu tidak tersedia";
+          return `<article class="flex items-center justify-between gap-3 border-b border-slate-100 py-3 last:border-0"><div class="min-w-0"><p class="truncate text-xs font-bold text-slate-700">${escapeHtml(item.nama || item.name || "Barang")}</p><p class="mt-1 text-[10px] text-slate-400">${escapeHtml(timeText)}</p></div><span class="shrink-0 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-[10px] font-bold text-emerald-700">+${Number(entry.quantity || 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</span></article>`;
+        })
+        .join("")
+    : '<p class="py-5 text-center text-xs text-slate-400">Belum ada riwayat penerimaan barang.</p>';
 }
 
 window.renderAdminPwaStock = function () {
   const list = document.getElementById("adminPwaStockList");
   if (!list) return;
   if (!window.appState.inventoryLoaded) {
-    list.innerHTML = '<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-sky-700"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Memuat stok...</div>';
+    list.innerHTML =
+      '<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-sky-700"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Memuat stok...</div>';
     return;
   }
-  const query = (document.getElementById("adminPwaStockSearch")?.value || "").trim().toLocaleLowerCase("id-ID");
-  const items = [...window.appState.inventoryItems].filter((item) => (item.nama || item.name || "").toLocaleLowerCase("id-ID").includes(query)).sort((a, b) => String(a.nama || a.name || "").localeCompare(String(b.nama || b.name || ""), "id"));
-  list.innerHTML = items.length ? items.map((item) => {
-    const stock = Number(item.datang || 0);
-    const minimum = Number(item.minimumStock || 0);
-    const low = minimum > 0 && stock <= minimum;
-    const state = low ? "Perlu restok" : stock > 0 ? "Tersedia" : "Kosong";
-    const color = low ? "bg-amber-50 text-amber-700" : stock > 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700";
-    return `<article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div class="flex items-center justify-between gap-3"><div class="min-w-0"><h3 class="truncate text-sm font-bold text-slate-800">${escapeHtml(item.nama || item.name || "Barang")}</h3><p class="mt-1 text-[11px] text-slate-500">${escapeHtml(item.tipe || "Umum")} Â· Kebutuhan ${Number(item.kebutuhan || 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</p></div><div class="shrink-0 text-right"><strong class="block text-sm text-slate-800">${stock.toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</strong><span class="mt-1 inline-flex rounded-full px-2 py-1 text-[9px] font-bold ${color}">${state}</span></div></div><button type="button" onclick="openStockUpdate(decodeURIComponent('${encodeURIComponent(String(item.id))}'))" class="mt-3 w-full rounded-xl bg-sky-50 px-3 py-2.5 text-xs font-bold text-sky-700 hover:bg-sky-100"><i class="fa-solid fa-pen-to-square mr-1"></i>Update Stok</button></article>`;
-  }).join("") : '<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">Barang tidak ditemukan.</div>';
+  const query = (document.getElementById("adminPwaStockSearch")?.value || "")
+    .trim()
+    .toLocaleLowerCase("id-ID");
+  const items = [...window.appState.inventoryItems]
+    .filter((item) =>
+      (item.nama || item.name || "").toLocaleLowerCase("id-ID").includes(query),
+    )
+    .sort((a, b) =>
+      String(a.nama || a.name || "").localeCompare(
+        String(b.nama || b.name || ""),
+        "id",
+      ),
+    );
+  list.innerHTML = items.length
+    ? items
+        .map((item) => {
+          const stock = Number(item.datang || 0);
+          const minimum = Number(item.minimumStock || 0);
+          const low = minimum > 0 && stock <= minimum;
+          const state = low
+            ? "Perlu restok"
+            : stock > 0
+              ? "Tersedia"
+              : "Kosong";
+          const color = low
+            ? "bg-amber-50 text-amber-700"
+            : stock > 0
+              ? "bg-emerald-50 text-emerald-700"
+              : "bg-rose-50 text-rose-700";
+          return `<article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div class="flex items-center justify-between gap-3"><div class="min-w-0"><h3 class="truncate text-sm font-bold text-slate-800">${escapeHtml(item.nama || item.name || "Barang")}</h3><p class="mt-1 text-[11px] text-slate-500">${escapeHtml(item.tipe || "Umum")} Â· Kebutuhan ${Number(item.kebutuhan || 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</p></div><div class="shrink-0 text-right"><strong class="block text-sm text-slate-800">${stock.toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</strong><span class="mt-1 inline-flex rounded-full px-2 py-1 text-[9px] font-bold ${color}">${state}</span></div></div><button type="button" onclick="openStockUpdate(decodeURIComponent('${encodeURIComponent(String(item.id))}'))" class="mt-3 w-full rounded-xl bg-sky-50 px-3 py-2.5 text-xs font-bold text-sky-700 hover:bg-sky-100"><i class="fa-solid fa-pen-to-square mr-1"></i>Update Stok</button></article>`;
+        })
+        .join("")
+    : '<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">Barang tidak ditemukan.</div>';
 };
 
 window.renderAdminPwaStock = function () {
   const list = document.getElementById("adminPwaStockList");
   if (!list) return;
   if (!window.appState.inventoryLoaded) {
-    list.innerHTML = '<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-sky-700"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Memuat stok...</div>';
+    list.innerHTML =
+      '<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-sky-700"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Memuat stok...</div>';
     return;
   }
-  const query = (document.getElementById("adminPwaStockSearch")?.value || "").trim().toLocaleLowerCase("id-ID");
-  const items = [...window.appState.inventoryItems].filter((item) => (item.nama || item.name || "").toLocaleLowerCase("id-ID").includes(query)).sort((a, b) => String(a.nama || a.name || "").localeCompare(String(b.nama || b.name || ""), "id"));
-  list.innerHTML = items.length ? items.map((item) => {
-    const stock = Number(item.datang || 0);
-    const minimum = Number(item.minimumStock || 0);
-    const low = minimum > 0 && stock <= minimum;
-    const state = low ? "Perlu restok" : stock > 0 ? "Tersedia" : "Kosong";
-    const color = low ? "bg-amber-50 text-amber-700" : stock > 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700";
-    const safeId = encodeURIComponent(String(item.id));
-    return `<article class="rounded-2xl border ${low ? "border-amber-300" : "border-slate-200"} bg-white p-4 shadow-sm"><div class="flex items-center justify-between gap-3"><div class="min-w-0"><h3 class="truncate text-sm font-bold text-slate-800">${escapeHtml(item.nama || item.name || "Barang")}</h3><p class="mt-1 text-[11px] text-slate-500">${escapeHtml(item.tipe || "Umum")} · ${escapeHtml(item.satuan || "unit")}</p>${minimum > 0 ? `<p class="mt-1 text-[10px] ${low ? "font-semibold text-amber-700" : "text-slate-400"}">Batas minimum ${minimum.toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</p>` : ""}</div><div class="shrink-0 text-right"><strong class="block text-sm text-slate-800">${stock.toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</strong><span class="mt-1 inline-flex rounded-full px-2 py-1 text-[9px] font-bold ${color}">${state}</span></div></div><button type="button" onclick="openStockUpdate(decodeURIComponent('${safeId}'))" class="mt-3 w-full rounded-xl bg-sky-50 px-3 py-2.5 text-xs font-bold text-sky-700 hover:bg-sky-100"><i class="fa-solid fa-pen-to-square mr-1"></i>Update Stok</button><button type="button" onclick="openStocktake(decodeURIComponent('${safeId}'))" class="mt-2 w-full rounded-xl bg-indigo-50 px-3 py-2.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100"><i class="fa-solid fa-clipboard-check mr-1"></i>Catat Stok Opname</button><div class="mt-2 grid grid-cols-2 gap-2"><button type="button" onclick="openStockHistory(decodeURIComponent('${safeId}'))" class="rounded-xl bg-slate-100 px-3 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-200"><i class="fa-solid fa-clock-rotate-left mr-1"></i>Riwayat</button><button type="button" onclick="promptStockDelete(decodeURIComponent('${safeId}'))" class="rounded-xl bg-rose-50 px-3 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-100"><i class="fa-solid fa-trash-can mr-1"></i>Hapus</button></div></article>`;
-  }).join("") : '<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">Barang tidak ditemukan.</div>';
+  const query = (document.getElementById("adminPwaStockSearch")?.value || "")
+    .trim()
+    .toLocaleLowerCase("id-ID");
+  const items = [...window.appState.inventoryItems]
+    .filter((item) =>
+      (item.nama || item.name || "").toLocaleLowerCase("id-ID").includes(query),
+    )
+    .sort((a, b) =>
+      String(a.nama || a.name || "").localeCompare(
+        String(b.nama || b.name || ""),
+        "id",
+      ),
+    );
+  list.innerHTML = items.length
+    ? items
+        .map((item) => {
+          const stock = Number(item.datang || 0);
+          const minimum = Number(item.minimumStock || 0);
+          const low = minimum > 0 && stock <= minimum;
+          const state = low
+            ? "Perlu restok"
+            : stock > 0
+              ? "Tersedia"
+              : "Kosong";
+          const color = low
+            ? "bg-amber-50 text-amber-700"
+            : stock > 0
+              ? "bg-emerald-50 text-emerald-700"
+              : "bg-rose-50 text-rose-700";
+          const safeId = encodeURIComponent(String(item.id));
+          return `<article class="rounded-2xl border ${low ? "border-amber-300" : "border-slate-200"} bg-white p-4 shadow-sm"><div class="flex items-center justify-between gap-3"><div class="min-w-0"><h3 class="truncate text-sm font-bold text-slate-800">${escapeHtml(item.nama || item.name || "Barang")}</h3><p class="mt-1 text-[11px] text-slate-500">${escapeHtml(item.tipe || "Umum")} · ${escapeHtml(item.satuan || "unit")}</p>${minimum > 0 ? `<p class="mt-1 text-[10px] ${low ? "font-semibold text-amber-700" : "text-slate-400"}">Batas minimum ${minimum.toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</p>` : ""}</div><div class="shrink-0 text-right"><strong class="block text-sm text-slate-800">${stock.toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</strong><span class="mt-1 inline-flex rounded-full px-2 py-1 text-[9px] font-bold ${color}">${state}</span></div></div><button type="button" onclick="openStockUpdate(decodeURIComponent('${safeId}'))" class="mt-3 w-full rounded-xl bg-sky-50 px-3 py-2.5 text-xs font-bold text-sky-700 hover:bg-sky-100"><i class="fa-solid fa-pen-to-square mr-1"></i>Update Stok</button><button type="button" onclick="openStocktake(decodeURIComponent('${safeId}'))" class="mt-2 w-full rounded-xl bg-indigo-50 px-3 py-2.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100"><i class="fa-solid fa-clipboard-check mr-1"></i>Catat Stok Opname</button><div class="mt-2 grid grid-cols-2 gap-2"><button type="button" onclick="openStockHistory(decodeURIComponent('${safeId}'))" class="rounded-xl bg-slate-100 px-3 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-200"><i class="fa-solid fa-clock-rotate-left mr-1"></i>Riwayat</button><button type="button" onclick="promptStockDelete(decodeURIComponent('${safeId}'))" class="rounded-xl bg-rose-50 px-3 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-100"><i class="fa-solid fa-trash-can mr-1"></i>Hapus</button></div></article>`;
+        })
+        .join("")
+    : '<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">Barang tidak ditemukan.</div>';
 };
 
 window.openAdminPwaAddStockItem = function () {
@@ -1999,17 +2604,39 @@ window.submitAdminPwaAddStockItem = async function (event) {
     nama: name,
     tipe: document.getElementById("adminPwaNewItemType").value,
     satuan: unit,
-    datang: Number(document.getElementById("adminPwaNewItemOpeningStock").value || 0),
-    minimumStock: Number(document.getElementById("adminPwaNewItemMinimum").value || 0),
+    datang: Number(
+      document.getElementById("adminPwaNewItemOpeningStock").value || 0,
+    ),
+    minimumStock: Number(
+      document.getElementById("adminPwaNewItemMinimum").value || 0,
+    ),
     stockHistory: [],
   };
-  if (!item.nama || !item.satuan || item.datang < 0 || item.minimumStock < 0) return;
-  if (window.appState.inventoryItems.some((entry) => String(entry.id) === id)) return showToast("Barang dan satuan tersebut sudah ada di daftar stok", "info");
-  if (item.datang > 0) item.stockHistory.push({ type: "masuk", quantity: item.datang, stockBefore: 0, stockAfter: item.datang, date: document.getElementById("adminPwaNewItemDate").value, note: "Saldo awal", createdAt: new Date().toISOString() });
+  if (!item.nama || !item.satuan || item.datang < 0 || item.minimumStock < 0)
+    return;
+  if (window.appState.inventoryItems.some((entry) => String(entry.id) === id))
+    return showToast(
+      "Barang dan satuan tersebut sudah ada di daftar stok",
+      "info",
+    );
+  if (item.datang > 0)
+    item.stockHistory.push({
+      type: "masuk",
+      quantity: item.datang,
+      stockBefore: 0,
+      stockAfter: item.datang,
+      date: document.getElementById("adminPwaNewItemDate").value,
+      note: "Saldo awal",
+      createdAt: new Date().toISOString(),
+    });
   setButtonLoading(button, true, "Menyimpan...");
   try {
     const existing = await getDoc(doc(db, "inventory_items", id));
-    if (existing.exists()) return showToast("Barang dan satuan tersebut sudah ada di daftar stok", "info");
+    if (existing.exists())
+      return showToast(
+        "Barang dan satuan tersebut sudah ada di daftar stok",
+        "info",
+      );
     await setDoc(doc(db, "inventory_items", id), item);
     window.appState.inventoryItems.unshift(item);
     renderAdminPwaStock();
@@ -2030,22 +2657,33 @@ function renderAdminPwaProfile() {
   const name = document.getElementById("adminProfileName");
   const email = document.getElementById("adminProfileEmail");
   const role = document.getElementById("adminProfileRole");
-  if (photo) photo.src = user?.photoURL || getSppHeaderSettings().foundationLogoDataUrl || "./assets/icon-192.svg";
+  if (photo)
+    photo.src =
+      user?.photoURL ||
+      getSppHeaderSettings().foundationLogoDataUrl ||
+      "./assets/icon-192.svg";
   if (name) name.textContent = user?.displayName || "Pengguna";
   if (email) email.textContent = user?.email || "Belum login";
-  if (role) role.textContent = window.appState.access?.role === USER_ROLES.SUPER_ADMIN ? "Super Admin" : "Admin Logistik";
+  if (role)
+    role.textContent =
+      window.appState.access?.role === USER_ROLES.SUPER_ADMIN
+        ? "Super Admin"
+        : "Admin Logistik";
 }
 
 function observeAdminArrivalSentinel() {
   adminArrivalObserver?.disconnect();
   const sentinel = document.getElementById("adminArrivalScrollSentinel");
   if (!sentinel || !("IntersectionObserver" in window)) return;
-  adminArrivalObserver = new IntersectionObserver((entries) => {
-    if (entries.some((entry) => entry.isIntersecting)) {
-      adminArrivalVisibleCount += ADMIN_ARRIVAL_PAGE_SIZE;
-      renderAdminArrivalPage();
-    }
-  }, { rootMargin: "180px" });
+  adminArrivalObserver = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        adminArrivalVisibleCount += ADMIN_ARRIVAL_PAGE_SIZE;
+        renderAdminArrivalPage();
+      }
+    },
+    { rootMargin: "180px" },
+  );
   adminArrivalObserver.observe(sentinel);
 }
 
@@ -2055,14 +2693,25 @@ function getLocalDateString(date = new Date()) {
 
 function formatDateID(value) {
   const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("id-ID", { dateStyle: "medium" });
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleDateString("id-ID", { dateStyle: "medium" });
 }
 
 async function compressArrivalPhoto(file) {
   let bitmap;
-  try { bitmap = await createImageBitmap(file); } catch { throw new Error("Foto tidak dapat dibaca. Pilih gambar JPG, PNG, atau WebP."); }
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    throw new Error(
+      "Foto tidak dapat dibaca. Pilih gambar JPG, PNG, atau WebP.",
+    );
+  }
   const maxDimension = 1280;
-  const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+  const scale = Math.min(
+    1,
+    maxDimension / Math.max(bitmap.width, bitmap.height),
+  );
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(bitmap.width * scale));
   canvas.height = Math.max(1, Math.round(bitmap.height * scale));
@@ -2071,45 +2720,77 @@ async function compressArrivalPhoto(file) {
   context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   bitmap.close?.();
   let quality = 0.68;
-  let blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+  let blob = await new Promise((resolve) =>
+    canvas.toBlob(resolve, "image/jpeg", quality),
+  );
   while (blob && blob.size > 360 * 1024 && quality > 0.38) {
     quality -= 0.08;
-    blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+    blob = await new Promise((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", quality),
+    );
   }
-  if (!blob || blob.size > 360 * 1024) throw new Error("Foto masih terlalu besar setelah dikompres. Ambil foto dengan resolusi lebih rendah.");
+  if (!blob || blob.size > 360 * 1024)
+    throw new Error(
+      "Foto masih terlalu besar setelah dikompres. Ambil foto dengan resolusi lebih rendah.",
+    );
   const dataUrl = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
     reader.onerror = () => reject(new Error("Foto gagal diproses."));
     reader.readAsDataURL(blob);
   });
-  return { dataUrl, sizeBytes: blob.size, width: canvas.width, height: canvas.height };
+  return {
+    dataUrl,
+    sizeBytes: blob.size,
+    width: canvas.width,
+    height: canvas.height,
+  };
 }
 
 window.renderAdminArrivalPage = renderAdminArrivalPage;
 
 window.openAdminArrival = function (itemId) {
-  const item = window.appState.barang.find(
+  const itemType = getAdminArrivalType();
+  const item = getAdminArrivalItems(itemType).find(
     (entry) => String(entry.id) === String(itemId),
   );
-  const selectedDate = document.getElementById("adminArrivalFilterDate")?.value || getLocalDateString();
-  if (!item || (item.statusAdmin || "Pending") !== "Pending" || String(item.tanggal || "") < selectedDate || String(item.tanggal || "") > (document.getElementById("adminArrivalFilterDateTo")?.value || selectedDate)) {
-    showToast("Barang ini tidak lagi berstatus Pending untuk tanggal terpilih", "error");
+  const selectedDate =
+    document.getElementById("adminArrivalFilterDate")?.value ||
+    getLocalDateString();
+  if (
+    !item ||
+    (item.statusAdmin || "Pending") !== "Pending" ||
+    String(item.tanggal || "") < selectedDate ||
+    String(item.tanggal || "") >
+      (document.getElementById("adminArrivalFilterDateTo")?.value ||
+        selectedDate)
+  ) {
+    showToast(
+      "Barang ini tidak lagi berstatus Pending untuk tanggal terpilih",
+      "error",
+    );
     renderAdminArrivalPage();
     return;
   }
   if (!window.appState.user) {
-    showToast("Login Google terlebih dahulu untuk mencatat penerimaan", "error");
+    showToast(
+      "Login Google terlebih dahulu untuk mencatat penerimaan",
+      "error",
+    );
     return;
   }
 
   document.getElementById("adminArrivalForm").reset();
   document.getElementById("adminArrivalItemId").value = item.id;
-  document.getElementById("adminArrivalItemName").textContent = item.nama || item.name || "Barang";
-  document.getElementById("adminArrivalUnit").textContent = item.satuan || "unit";
+  document.getElementById("adminArrivalItemType").value = itemType;
+  document.getElementById("adminArrivalItemName").textContent =
+    item.nama || item.name || "Barang";
+  document.getElementById("adminArrivalUnit").textContent =
+    item.satuan || "unit";
   const now = new Date();
   document.getElementById("adminArrivalDate").value = getLocalDateString(now);
-  document.getElementById("adminArrivalTime").value = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  document.getElementById("adminArrivalTime").value =
+    `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
   document.getElementById("adminArrivalPhotoPreview").classList.add("hidden");
   document.getElementById("adminArrivalModal").classList.remove("hidden");
   document.getElementById("adminArrivalModal").classList.add("flex");
@@ -2128,9 +2809,12 @@ window.closeAdminArrivalModal = function () {
 
 window.viewAdminArrivalPhoto = async function (photoId) {
   try {
-    const photoSnapshot = await getDoc(doc(db, "barang_arrival_photos", String(photoId)));
+    const photoSnapshot = await getDoc(
+      doc(db, "barang_arrival_photos", String(photoId)),
+    );
     const data = photoSnapshot.exists() ? photoSnapshot.data() : null;
-    const dataUrl = data?.dataUrl || data?.base64 || data?.foto || data?.image || "";
+    const dataUrl =
+      data?.dataUrl || data?.base64 || data?.foto || data?.image || "";
     if (!dataUrl) throw new Error("Foto bukti tidak ditemukan.");
     const view = document.getElementById("adminArrivalPhotoViewModal");
     const image = document.getElementById("adminArrivalPhotoViewImage");
@@ -2154,10 +2838,16 @@ window.closeAdminArrivalPhotoView = function () {
 window.submitAdminArrival = async function (event) {
   event.preventDefault();
   const itemId = document.getElementById("adminArrivalItemId").value;
-  const item = window.appState.barang.find(
+  const itemType = document.getElementById("adminArrivalItemType").value;
+  const itemCollection =
+    itemType === "operasional" ? "operational_items" : "mbg_items";
+  const currentItems = getAdminArrivalItems(itemType);
+  const item = currentItems.find(
     (entry) => String(entry.id) === String(itemId),
   );
-  const quantity = Number(document.getElementById("adminArrivalQuantity").value);
+  const quantity = Number(
+    document.getElementById("adminArrivalQuantity").value,
+  );
   const file = document.getElementById("adminArrivalPhoto").files?.[0];
   const date = document.getElementById("adminArrivalDate").value;
   const time = document.getElementById("adminArrivalTime").value;
@@ -2166,11 +2856,17 @@ window.submitAdminArrival = async function (event) {
     return;
   }
   if (String(item.tanggal || "") !== date) {
-    showToast("Tanggal datang tetap harus sesuai dengan tanggal barang", "error");
+    showToast(
+      "Tanggal datang tetap harus sesuai dengan tanggal barang",
+      "error",
+    );
     return;
   }
   if (!window.appState.user) {
-    showToast("Login Google terlebih dahulu untuk mencatat penerimaan", "error");
+    showToast(
+      "Login Google terlebih dahulu untuk mencatat penerimaan",
+      "error",
+    );
     return;
   }
   if (!file || !file.type.startsWith("image/")) {
@@ -2192,13 +2888,20 @@ window.submitAdminArrival = async function (event) {
   let parentItemSaved = false;
   try {
     const compressedPhoto = await compressArrivalPhoto(file);
-    submitButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Menyimpan ke Firestore...</span>';
+    submitButton.innerHTML =
+      '<i class="fa-solid fa-spinner fa-spin"></i><span>Menyimpan ke Firestore...</span>';
     const receivedAt = new Date(`${date}T${time}`);
     const recordedAt = new Date().toISOString();
-    const inventoryId = getInventoryDocumentId(item.nama || item.name || "Barang", item.satuan || "unit");
+    const inventoryId = getInventoryDocumentId(
+      item.nama || item.name || "Barang",
+      item.satuan || "unit",
+    );
     const inventoryRef = doc(db, "inventory_items", inventoryId);
     const inventorySnapshot = await getDoc(inventoryRef);
-    const cachedInventoryItem = window.appState.inventoryItems.find((entry) => String(entry.id) === inventoryId) || {};
+    const cachedInventoryItem =
+      window.appState.inventoryItems.find(
+        (entry) => String(entry.id) === inventoryId,
+      ) || {};
     const inventoryItem = inventorySnapshot.exists()
       ? { id: inventorySnapshot.id, ...inventorySnapshot.data() }
       : cachedInventoryItem;
@@ -2233,9 +2936,26 @@ window.submitAdminArrival = async function (event) {
       tipe: inventoryItem.tipe || item.tipe || "Umum",
       satuan: inventoryItem.satuan || item.satuan || "unit",
       datang: stockAfter,
-      sourcePlanningItemIds: [...new Set([...(inventoryItem.sourcePlanningItemIds || []), String(item.id)])],
+      sourcePlanningItemIds: [
+        ...new Set([
+          ...(inventoryItem.sourcePlanningItemIds || []),
+          ...(itemType === "operasional" ? [] : [String(item.id)]),
+        ]),
+      ],
+      ...(itemType === "operasional"
+        ? {
+            sourceOperationalItemIds: [
+              ...new Set([
+                ...(inventoryItem.sourceOperationalItemIds || []),
+                String(item.id),
+              ]),
+            ],
+          }
+        : {}),
       stockHistory: [
-        ...(Array.isArray(inventoryItem.stockHistory) ? inventoryItem.stockHistory : []),
+        ...(Array.isArray(inventoryItem.stockHistory)
+          ? inventoryItem.stockHistory
+          : []),
         {
           type: "masuk",
           quantity,
@@ -2250,6 +2970,7 @@ window.submitAdminArrival = async function (event) {
     const batch = writeBatch(db);
     batch.set(photoRef, {
       itemId: String(item.id),
+      itemType,
       itemName: item.nama || item.name || "Barang",
       receivedDate: date,
       receivedTime: time,
@@ -2259,16 +2980,22 @@ window.submitAdminArrival = async function (event) {
       sizeBytes: compressedPhoto.sizeBytes,
       dataUrl: compressedPhoto.dataUrl,
     });
-    batch.set(doc(db, "mbg_items", String(item.id)), updatedItem);
+    batch.set(doc(db, itemCollection, String(item.id)), updatedItem);
     batch.set(inventoryRef, updatedInventoryItem);
     await batch.commit();
     parentItemSaved = true;
-    window.appState.barang = window.appState.barang.map((entry) =>
+    const updatedItems = currentItems.map((entry) =>
       String(entry.id) === String(item.id) ? updatedItem : entry,
     );
-    const inventoryIndex = window.appState.inventoryItems.findIndex((entry) => String(entry.id) === inventoryId);
+    if (itemType === "operasional")
+      window.appState.barangOperasional = updatedItems;
+    else window.appState.barang = updatedItems;
+    const inventoryIndex = window.appState.inventoryItems.findIndex(
+      (entry) => String(entry.id) === inventoryId,
+    );
     const nextInventoryItem = { id: inventoryId, ...updatedInventoryItem };
-    if (inventoryIndex < 0) window.appState.inventoryItems.unshift(nextInventoryItem);
+    if (inventoryIndex < 0)
+      window.appState.inventoryItems.unshift(nextInventoryItem);
     else window.appState.inventoryItems[inventoryIndex] = nextInventoryItem;
     renderAdminArrivalPage();
     renderStockTable();
@@ -2277,10 +3004,18 @@ window.submitAdminArrival = async function (event) {
     renderAdminPwaStock();
     updateDashboardMetrics();
     closeAdminArrivalModal();
-    showToast("Foto terkompresi dan penerimaan berhasil disimpan ke Firestore", "success");
+    showToast(
+      "Foto terkompresi dan penerimaan berhasil disimpan ke Firestore",
+      "success",
+    );
   } catch (error) {
     if (photoRef && !parentItemSaved) await deleteDoc(photoRef).catch(() => {});
-    showToast(parentItemSaved ? `Penerimaan tersimpan, tetapi foto mungkin gagal dibersihkan dari data browser: ${error.message}` : error.message || "Penerimaan barang gagal disimpan.", "error");
+    showToast(
+      parentItemSaved
+        ? `Penerimaan tersimpan, tetapi foto mungkin gagal dibersihkan dari data browser: ${error.message}`
+        : error.message || "Penerimaan barang gagal disimpan.",
+      "error",
+    );
   } finally {
     setButtonLoading(submitButton, false);
   }
@@ -2292,7 +3027,8 @@ window.renderStockTable = function () {
   if (!tbody || !summary) return;
 
   if (!window.appState.inventoryLoaded) {
-    tbody.innerHTML = '<tr><td colspan="5" class="py-10 text-center text-sky-700"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Memuat stok...</td></tr>';
+    tbody.innerHTML =
+      '<tr><td colspan="5" class="py-10 text-center text-sky-700"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Memuat stok...</td></tr>';
     return;
   }
   const items = window.appState.inventoryItems;
@@ -2321,8 +3057,13 @@ window.renderStockTable = function () {
       .toLowerCase()
       .includes(query);
     const state = stockState(item);
-    const isLow = Number(item.minimumStock || 0) > 0 && Number(item.datang || 0) <= Number(item.minimumStock || 0);
-    return matchesName && (filter === "all" || filter === state || (filter === "low" && isLow));
+    const isLow =
+      Number(item.minimumStock || 0) > 0 &&
+      Number(item.datang || 0) <= Number(item.minimumStock || 0);
+    return (
+      matchesName &&
+      (filter === "all" || filter === state || (filter === "low" && isLow))
+    );
   });
 
   if (!filtered.length) {
@@ -2336,8 +3077,16 @@ window.renderStockTable = function () {
       const state = stockState(item);
       const minimum = Number(item.minimumStock || 0);
       const low = minimum > 0 && arrived <= minimum;
-      const stateLabel = low ? "Perlu restok" : state === "empty" ? "Kosong" : "Tersedia";
-      const stateStyle = low ? "bg-amber-100 text-amber-800" : state === "empty" ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700";
+      const stateLabel = low
+        ? "Perlu restok"
+        : state === "empty"
+          ? "Kosong"
+          : "Tersedia";
+      const stateStyle = low
+        ? "bg-amber-100 text-amber-800"
+        : state === "empty"
+          ? "bg-red-100 text-red-700"
+          : "bg-emerald-100 text-emerald-700";
       return `<tr class="hover:bg-slate-50/80 ${low ? "bg-amber-50/40" : ""}"><td class="py-3.5 px-5"><p class="font-bold text-slate-800">${escapeHtml(item.nama || item.name || "-")}</p><p class="text-[10px] text-slate-400 mt-1">ID: ${escapeHtml(item.id)}</p></td><td class="py-3.5 px-5">${escapeHtml(item.tipe || "Utama")}</td><td class="py-3.5 px-5 text-right font-bold text-slate-800 whitespace-nowrap">${arrived.toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}${minimum > 0 ? `<p class="mt-1 text-[10px] font-normal ${low ? "text-amber-700" : "text-slate-400"}">Minimum ${minimum.toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</p>` : ""}</td><td class="py-3.5 px-5"><span class="px-2.5 py-1 rounded-full text-[10px] font-bold ${stateStyle}">${stateLabel}</span></td><td class="py-3.5 px-5 text-right whitespace-nowrap"><button type="button" onclick="openStockUpdate('${escapeHtml(item.id)}')" class="px-2.5 py-2 bg-sky-50 text-sky-700 rounded-lg font-semibold hover:bg-sky-100" title="Catat barang masuk atau keluar"><i class="fa-solid fa-pen-to-square mr-1"></i>Update</button><button type="button" onclick="openStockMinimum('${escapeHtml(item.id)}')" class="px-2.5 py-2 ml-1 bg-amber-50 text-amber-700 rounded-lg font-semibold hover:bg-amber-100" title="Atur batas minimum"><i class="fa-solid fa-bell"></i></button><button type="button" onclick="openStockHistory('${escapeHtml(item.id)}')" class="px-2.5 py-2 ml-1 bg-slate-100 text-slate-600 rounded-lg font-semibold hover:bg-slate-200" title="Lihat riwayat"><i class="fa-solid fa-clock-rotate-left mr-1"></i>Riwayat</button><button type="button" onclick="promptStockDelete('${escapeHtml(item.id)}')" class="px-2.5 py-2 ml-1 bg-red-50 text-red-600 rounded-lg font-semibold hover:bg-red-100" title="Hapus barang"><i class="fa-solid fa-trash-can"></i></button></td></tr>`;
     })
     .join("");
@@ -2359,26 +3108,44 @@ function getSppHeaderSettings() {
 function renderSidebarBrandLogo() {
   const settings = getSppHeaderSettings();
   const logoUrl = settings.foundationLogoDataUrl;
-  const brandHeader = document.querySelector("#sidebar > div:first-child > div:first-child");
+  const brandHeader = document.querySelector(
+    "#sidebar > div:first-child > div:first-child",
+  );
   if (!brandHeader) return;
 
   const container = brandHeader.firstElementChild;
   if (container) {
-    container.classList.add("sidebar-brand-mark", "shrink-0", "overflow-hidden");
+    container.classList.add(
+      "sidebar-brand-mark",
+      "shrink-0",
+      "overflow-hidden",
+    );
     if (typeof logoUrl === "string" && logoUrl.startsWith("data:image/")) {
       let image = container.querySelector("img");
       if (!image) {
         image = document.createElement("img");
         image.alt = "Logo yayasan";
-        image.className = "block h-full w-full rounded-xl bg-white object-contain p-0.5";
+        image.className =
+          "block h-full w-full rounded-xl bg-white object-contain p-0.5";
         container.replaceChildren(image);
       }
       if (image.src !== logoUrl) image.src = logoUrl;
-      container.classList.remove("bg-gradient-to-tr", "from-sky-500", "to-emerald-400", "text-white", "shadow-sky-500/20");
+      container.classList.remove(
+        "bg-gradient-to-tr",
+        "from-sky-500",
+        "to-emerald-400",
+        "text-white",
+        "shadow-sky-500/20",
+      );
       container.classList.add("bg-white");
     } else {
       container.classList.remove("bg-white");
-      container.classList.add("bg-gradient-to-tr", "from-sky-500", "to-emerald-400", "text-white");
+      container.classList.add(
+        "bg-gradient-to-tr",
+        "from-sky-500",
+        "to-emerald-400",
+        "text-white",
+      );
       if (!container.querySelector("i")) {
         const icon = document.createElement("i");
         icon.className = "fa-solid fa-utensils text-lg";
@@ -2394,7 +3161,8 @@ function renderSidebarBrandLogo() {
     title.classList.add("truncate");
   }
   if (subtitle) {
-    subtitle.textContent = settings.foundationName?.trim() || "Makan Bergizi Gratis";
+    subtitle.textContent =
+      settings.foundationName?.trim() || "Makan Bergizi Gratis";
     subtitle.classList.add("truncate");
   }
   brandHeader.lastElementChild?.classList.add("min-w-0", "flex-1");
@@ -2402,13 +3170,18 @@ function renderSidebarBrandLogo() {
 
 function renderConfiguredAppIcons() {
   const logoUrl = getSppHeaderSettings().foundationLogoDataUrl;
-  const hasCustomLogo = typeof logoUrl === "string" && logoUrl.startsWith("data:image/");
+  const hasCustomLogo =
+    typeof logoUrl === "string" && logoUrl.startsWith("data:image/");
   const iconUrl = hasCustomLogo ? logoUrl : "./assets/icon-192.svg";
 
-  document.querySelectorAll('link[rel="icon"], link[rel="apple-touch-icon"]').forEach((link) => {
-    link.href = iconUrl;
-    link.type = hasCustomLogo ? (logoUrl.slice(5, logoUrl.indexOf(";")) || "image/webp") : "image/svg+xml";
-  });
+  document
+    .querySelectorAll('link[rel="icon"], link[rel="apple-touch-icon"]')
+    .forEach((link) => {
+      link.href = iconUrl;
+      link.type = hasCustomLogo
+        ? logoUrl.slice(5, logoUrl.indexOf(";")) || "image/webp"
+        : "image/svg+xml";
+    });
 
   const pwaBrandIcon = document.getElementById("adminPwaBrandIcon");
   if (pwaBrandIcon) {
@@ -2417,7 +3190,8 @@ function renderConfiguredAppIcons() {
       if (!image) {
         image = document.createElement("img");
         image.alt = "Logo yayasan";
-        image.className = "h-full w-full rounded-2xl bg-white object-contain p-0.5";
+        image.className =
+          "h-full w-full rounded-2xl bg-white object-contain p-0.5";
         pwaBrandIcon.replaceChildren(image);
       }
       if (image.src !== logoUrl) image.src = logoUrl;
@@ -2435,7 +3209,8 @@ function renderConfiguredAppIcons() {
   }
 
   const profilePhoto = document.getElementById("adminProfilePhoto");
-  if (profilePhoto && !window.appState.user?.photoURL) profilePhoto.src = iconUrl;
+  if (profilePhoto && !window.appState.user?.photoURL)
+    profilePhoto.src = iconUrl;
 }
 
 window.renderSidebarBrandLogo = renderSidebarBrandLogo;
@@ -2455,9 +3230,13 @@ window.saveKitchenSettingsToFirebase = async function (settings) {
     updatedAt: new Date().toISOString(),
     updatedBy: normalizeAccountEmail(window.appState.user?.email),
   };
-  await setDoc(doc(db, "app_settings", "organization"), savedSettings, { merge: true });
+  await setDoc(doc(db, "app_settings", "organization"), savedSettings, {
+    merge: true,
+  });
   window.appState.kitchenSettings = savedSettings;
-  try { localStorage.setItem("mbgKitchenSettings", JSON.stringify(savedSettings)); } catch {}
+  try {
+    localStorage.setItem("mbgKitchenSettings", JSON.stringify(savedSettings));
+  } catch {}
   window.dispatchEvent(new Event("mbg-kitchen-settings-updated"));
   return savedSettings;
 };
@@ -2467,7 +3246,11 @@ renderConfiguredAppIcons();
 function renderSppLetters(loadError = null) {
   const tbody = document.getElementById("sppLettersTableBody");
   if (!tbody) return;
-  const letters = [...(window.appState.sppLetters || [])].sort((a, b) => String(b.createdAt || b.date || "").localeCompare(String(a.createdAt || a.date || "")));
+  const letters = [...(window.appState.sppLetters || [])].sort((a, b) =>
+    String(b.createdAt || b.date || "").localeCompare(
+      String(a.createdAt || a.date || ""),
+    ),
+  );
   const count = document.getElementById("sppLetterCount");
   if (count) count.textContent = `${letters.length} surat`;
   if (!window.appState.sppLettersLoaded) {
@@ -2475,9 +3258,10 @@ function renderSppLetters(loadError = null) {
     return;
   }
   if (loadError) {
-    const message = loadError.code === "permission-denied"
-      ? "Akses ditolak. Publikasikan Firestore Rules terbaru yang mengizinkan koleksi payment_letters, lalu muat ulang halaman."
-      : `Surat gagal dimuat (${loadError.code || "Firestore"}): ${loadError.message || "terjadi kesalahan"}`;
+    const message =
+      loadError.code === "permission-denied"
+        ? "Akses ditolak. Publikasikan Firestore Rules terbaru yang mengizinkan koleksi payment_letters, lalu muat ulang halaman."
+        : `Surat gagal dimuat (${loadError.code || "Firestore"}): ${loadError.message || "terjadi kesalahan"}`;
     tbody.innerHTML = `<tr><td colspan="6" class="px-5 py-10 text-center text-rose-600">${escapeHtml(message)}</td></tr>`;
     return;
   }
@@ -2485,23 +3269,36 @@ function renderSppLetters(loadError = null) {
     tbody.innerHTML = `<tr><td colspan="6" class="px-5 py-10 text-center text-slate-400">Belum ada surat permintaan pembayaran yang disimpan.</td></tr>`;
     return;
   }
-  tbody.innerHTML = letters.map((letter) => {
-    const letterId = encodeURIComponent(String(letter.id));
-    const total = Number(letter.total ?? (letter.suppliers || []).reduce((sum, row) => sum + Number(row.amount || 0), 0));
-    const creator = letter.createdByName || letter.createdByEmail || "-";
-    return `<tr class="border-t border-slate-100 hover:bg-slate-50"><td class="whitespace-nowrap px-5 py-3.5">${escapeHtml(formatLetterDate(letter.date || "-"))}</td><td class="px-5 py-3.5 font-semibold text-slate-700">${escapeHtml(letter.number || "-")}</td><td class="max-w-xs px-5 py-3.5"><span class="line-clamp-2">${escapeHtml(letter.category || "-")}</span></td><td class="whitespace-nowrap px-5 py-3.5 text-right font-bold text-slate-700">${formatRupiah(total)}</td><td class="px-5 py-3.5">${escapeHtml(creator)}</td><td class="whitespace-nowrap px-5 py-3.5 text-right"><button type="button" onclick="openSavedSppLetter(decodeURIComponent('${letterId}'))" class="rounded-lg bg-sky-50 px-2.5 py-2 font-semibold text-sky-700" title="Buka surat"><i class="fa-regular fa-eye"></i></button><button type="button" onclick="editSavedSppLetter(decodeURIComponent('${letterId}'))" class="ml-1 rounded-lg bg-amber-50 px-2.5 py-2 font-semibold text-amber-700" title="Edit surat"><i class="fa-solid fa-pen-to-square"></i></button><button type="button" onclick="deleteSavedSppLetter(decodeURIComponent('${letterId}'))" class="ml-1 rounded-lg bg-rose-50 px-2.5 py-2 font-semibold text-rose-600" title="Hapus surat"><i class="fa-solid fa-trash-can"></i></button></td></tr>`;
-  }).join("");
+  tbody.innerHTML = letters
+    .map((letter) => {
+      const letterId = encodeURIComponent(String(letter.id));
+      const total = Number(
+        letter.total ??
+          (letter.suppliers || []).reduce(
+            (sum, row) => sum + Number(row.amount || 0),
+            0,
+          ),
+      );
+      const creator = letter.createdByName || letter.createdByEmail || "-";
+      return `<tr class="border-t border-slate-100 hover:bg-slate-50"><td class="whitespace-nowrap px-5 py-3.5">${escapeHtml(formatLetterDate(letter.date || "-"))}</td><td class="px-5 py-3.5 font-semibold text-slate-700">${escapeHtml(letter.number || "-")}</td><td class="max-w-xs px-5 py-3.5"><span class="line-clamp-2">${escapeHtml(letter.category || "-")}</span></td><td class="whitespace-nowrap px-5 py-3.5 text-right font-bold text-slate-700">${formatRupiah(total)}</td><td class="px-5 py-3.5">${escapeHtml(creator)}</td><td class="whitespace-nowrap px-5 py-3.5 text-right"><button type="button" onclick="openSavedSppLetter(decodeURIComponent('${letterId}'))" class="rounded-lg bg-sky-50 px-2.5 py-2 font-semibold text-sky-700" title="Buka surat"><i class="fa-regular fa-eye"></i></button><button type="button" onclick="editSavedSppLetter(decodeURIComponent('${letterId}'))" class="ml-1 rounded-lg bg-amber-50 px-2.5 py-2 font-semibold text-amber-700" title="Edit surat"><i class="fa-solid fa-pen-to-square"></i></button><button type="button" onclick="deleteSavedSppLetter(decodeURIComponent('${letterId}'))" class="ml-1 rounded-lg bg-rose-50 px-2.5 py-2 font-semibold text-rose-600" title="Hapus surat"><i class="fa-solid fa-trash-can"></i></button></td></tr>`;
+    })
+    .join("");
 }
 
 window.openSavedSppLetter = function (letterId) {
-  const letter = (window.appState.sppLetters || []).find((entry) => String(entry.id) === String(letterId));
+  const letter = (window.appState.sppLetters || []).find(
+    (entry) => String(entry.id) === String(letterId),
+  );
   if (!letter) return showToast("Surat tidak ditemukan", "error");
   showSppPreview(letter);
 };
 
 window.deleteSavedSppLetter = async function (letterId) {
-  const letter = (window.appState.sppLetters || []).find((entry) => String(entry.id) === String(letterId));
-  if (!letter || !window.confirm(`Hapus surat ${letter.number || "ini"}?`)) return;
+  const letter = (window.appState.sppLetters || []).find(
+    (entry) => String(entry.id) === String(letterId),
+  );
+  if (!letter || !window.confirm(`Hapus surat ${letter.number || "ini"}?`))
+    return;
   try {
     await deleteDoc(doc(db, "payment_letters", String(letterId)));
     showToast("Surat berhasil dihapus", "success");
@@ -2513,17 +3310,35 @@ window.deleteSavedSppLetter = async function (letterId) {
 function terbilangRupiah(value) {
   const number = Math.floor(Number(value) || 0);
   if (number === 0) return "nol rupiah";
-  const belowTwenty = ["", "satu", "dua", "tiga", "empat", "lima", "enam", "tujuh", "delapan", "sembilan", "sepuluh", "sebelas"];
+  const belowTwenty = [
+    "",
+    "satu",
+    "dua",
+    "tiga",
+    "empat",
+    "lima",
+    "enam",
+    "tujuh",
+    "delapan",
+    "sembilan",
+    "sepuluh",
+    "sebelas",
+  ];
   const words = (n) => {
     if (n < 12) return belowTwenty[n];
     if (n < 20) return `${words(n - 10)} belas`;
-    if (n < 100) return `${words(Math.floor(n / 10))} puluh${n % 10 ? ` ${words(n % 10)}` : ""}`;
+    if (n < 100)
+      return `${words(Math.floor(n / 10))} puluh${n % 10 ? ` ${words(n % 10)}` : ""}`;
     if (n < 200) return `seratus${n % 100 ? ` ${words(n - 100)}` : ""}`;
-    if (n < 1000) return `${words(Math.floor(n / 100))} ratus${n % 100 ? ` ${words(n % 100)}` : ""}`;
+    if (n < 1000)
+      return `${words(Math.floor(n / 100))} ratus${n % 100 ? ` ${words(n % 100)}` : ""}`;
     if (n < 2000) return `seribu${n % 1000 ? ` ${words(n - 1000)}` : ""}`;
-    if (n < 1_000_000) return `${words(Math.floor(n / 1000))} ribu${n % 1000 ? ` ${words(n % 1000)}` : ""}`;
-    if (n < 1_000_000_000) return `${words(Math.floor(n / 1_000_000))} juta${n % 1_000_000 ? ` ${words(n % 1_000_000)}` : ""}`;
-    if (n < 1_000_000_000_000) return `${words(Math.floor(n / 1_000_000_000))} miliar${n % 1_000_000_000 ? ` ${words(n % 1_000_000_000)}` : ""}`;
+    if (n < 1_000_000)
+      return `${words(Math.floor(n / 1000))} ribu${n % 1000 ? ` ${words(n % 1000)}` : ""}`;
+    if (n < 1_000_000_000)
+      return `${words(Math.floor(n / 1_000_000))} juta${n % 1_000_000 ? ` ${words(n % 1_000_000)}` : ""}`;
+    if (n < 1_000_000_000_000)
+      return `${words(Math.floor(n / 1_000_000_000))} miliar${n % 1_000_000_000 ? ` ${words(n % 1_000_000_000)}` : ""}`;
     return `${words(Math.floor(n / 1_000_000_000_000))} triliun${n % 1_000_000_000_000 ? ` ${words(n % 1_000_000_000_000)}` : ""}`;
   };
   return `${words(number).replace(/\s+/g, " ").trim()} rupiah`;
@@ -2531,31 +3346,53 @@ function terbilangRupiah(value) {
 
 function formatLetterDate(value) {
   const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleDateString("id-ID", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
 }
 
 window.refreshSppDatabaseOptions = function (row = null) {
   const suppliers = window.appState.suppliers || [];
-  const rows = row ? [row.matches?.("tr") ? row : row.closest?.("tr")].filter(Boolean) : [...(document.querySelectorAll("#sppSupplierRows tr") || [])];
+  const rows = row
+    ? [row.matches?.("tr") ? row : row.closest?.("tr")].filter(Boolean)
+    : [...(document.querySelectorAll("#sppSupplierRows tr") || [])];
   const safeOption = (value) => escapeHtml(String(value ?? ""));
   rows.forEach((entry) => {
     const itemDate = entry.querySelector(".spp-item-date")?.value || "";
-    const items = (window.appState.barang || []).filter((item) => itemDate && String(item.tanggal || "") === itemDate);
+    const items = (window.appState.barang || []).filter(
+      (item) => itemDate && String(item.tanggal || "") === itemDate,
+    );
     const itemSelect = entry.querySelector(".spp-item-select");
     const supplierSelect = entry.querySelector(".spp-item-supplier-select");
     if (itemSelect) {
       const selectedId = itemSelect.value;
-      const placeholder = !window.appState.barangLoaded ? "Memuat barang dari database..." : !itemDate ? "Pilih tanggal barang terlebih dahulu" : !items.length ? "Tidak ada barang pada tanggal ini" : "Pilih barang";
+      const placeholder = !window.appState.barangLoaded
+        ? "Memuat barang dari database..."
+        : !itemDate
+          ? "Pilih tanggal barang terlebih dahulu"
+          : !items.length
+            ? "Tidak ada barang pada tanggal ini"
+            : "Pilih barang";
       itemSelect.innerHTML = `<option value="">${placeholder}</option>${items.map((item) => `<option value="${safeOption(item.id)}">${safeOption(item.nama || item.name || "Barang")} Â· ${safeOption(item.satuan || "")}</option>`).join("")}`;
-      if (items.some((item) => String(item.id) === selectedId)) itemSelect.value = selectedId;
+      if (items.some((item) => String(item.id) === selectedId))
+        itemSelect.value = selectedId;
       else itemSelect.value = "";
       window.selectSppDatabaseItem(itemSelect);
     }
     if (supplierSelect) {
       const selectedId = supplierSelect.value;
-      const placeholder = !window.appState.suppliersLoaded ? "Memuat supplier dari database..." : suppliers.length ? "Pilih supplier" : "Belum ada data supplier";
+      const placeholder = !window.appState.suppliersLoaded
+        ? "Memuat supplier dari database..."
+        : suppliers.length
+          ? "Pilih supplier"
+          : "Belum ada data supplier";
       supplierSelect.innerHTML = `<option value="">${placeholder}</option>${suppliers.map((supplier) => `<option value="${safeOption(supplier.id)}">${safeOption(supplier.nama || "Supplier")}</option>`).join("")}`;
-      if (suppliers.some((supplier) => String(supplier.id) === selectedId)) supplierSelect.value = selectedId;
+      if (suppliers.some((supplier) => String(supplier.id) === selectedId))
+        supplierSelect.value = selectedId;
       else supplierSelect.value = "";
       window.selectSppDatabaseSupplier(supplierSelect);
     }
@@ -2564,15 +3401,21 @@ window.refreshSppDatabaseOptions = function (row = null) {
 
 window.selectSppDatabaseItem = function (select) {
   const row = select.closest("tr");
-  const item = (window.appState.barang || []).find((entry) => String(entry.id) === String(select.value));
+  const item = (window.appState.barang || []).find(
+    (entry) => String(entry.id) === String(select.value),
+  );
   const nameInput = row?.querySelector(".spp-item-name");
-  if (nameInput) nameInput.value = item ? (item.nama || item.name || "") : "";
+  if (nameInput) nameInput.value = item ? item.nama || item.name || "" : "";
   const quantityInput = row?.querySelector(".spp-item-quantity");
   const unitInput = row?.querySelector(".spp-item-unit");
   const unitLabel = row?.querySelector(".spp-item-unit-label");
   const priceInput = row?.querySelector(".spp-item-price");
   const receivedQuantity = item ? getItemReceivedQuantity(item) : 0;
-  const billableQuantity = item ? (receivedQuantity > 0 ? receivedQuantity : Number(item.kebutuhan || 0)) : 0;
+  const billableQuantity = item
+    ? receivedQuantity > 0
+      ? receivedQuantity
+      : Number(item.kebutuhan || 0)
+    : 0;
   if (quantityInput) quantityInput.value = item ? billableQuantity : "";
   if (unitInput) unitInput.value = item?.satuan || "";
   if (unitLabel) unitLabel.textContent = item?.satuan || "";
@@ -2593,7 +3436,9 @@ window.calculateSppRowTotal = function (row) {
 
 window.selectSppDatabaseSupplier = function (select) {
   const row = select.closest("tr");
-  const supplier = (window.appState.suppliers || []).find((entry) => String(entry.id) === String(select.value));
+  const supplier = (window.appState.suppliers || []).find(
+    (entry) => String(entry.id) === String(select.value),
+  );
   const nameInput = row?.querySelector(".spp-item-supplier");
   const accountInput = row?.querySelector(".spp-item-account");
   const bankInput = row?.querySelector(".spp-item-bank");
@@ -2607,9 +3452,15 @@ window.addSppSupplierRow = function (initial = {}) {
   if (!tbody) return;
   const row = document.createElement("tr");
   row.className = "border-t border-slate-100";
-  row.innerHTML = '<td class="p-2"><input class="spp-item-date hidden" type="hidden"/><input class="spp-item-date-picker mb-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-[10px]" type="date" aria-label="Tanggal barang" onchange="setSppItemDate(this)"/><select class="spp-item-select mb-1 w-full rounded-lg border border-slate-200 px-2 py-2" onchange="selectSppDatabaseItem(this)"><option value="">Pilih tanggal barang terlebih dahulu</option></select><input class="spp-item-name w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[10px]" maxlength="140" placeholder="Nama barang" readonly/></td><td class="p-2"><input class="spp-item-quantity w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2" type="number" min="0" step="any" placeholder="Qty" readonly/><small class="spp-item-unit-label ml-1 text-slate-500"></small><input class="spp-item-unit hidden" type="text"/></td><td class="p-2"><input class="spp-item-price w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2" type="number" min="0" step="any" placeholder="Harga" readonly/></td><td class="p-2"><input class="spp-item-amount w-full rounded-lg border border-slate-200 bg-sky-50 px-2 py-2 font-bold" type="number" min="0" step="any" placeholder="Total" readonly/></td><td class="p-2"><input class="spp-item-account w-full rounded-lg border border-slate-200 px-2 py-2" maxlength="80" placeholder="Otomatis dari supplier"/></td><td class="p-2"><input class="spp-item-bank w-full rounded-lg border border-slate-200 px-2 py-2" maxlength="100" placeholder="Otomatis dari supplier"/></td><td class="p-2"><select class="spp-item-supplier-select mb-1 w-full rounded-lg border border-slate-200 px-2 py-2" onchange="selectSppDatabaseSupplier(this)"><option value="">Memuat supplier dari database...</option></select><input class="spp-item-supplier w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[10px]" maxlength="140" placeholder="Nama supplier" readonly/></td><td class="p-2"><button type="button" class="spp-remove-row rounded-lg bg-rose-50 px-2 py-2 text-rose-600" aria-label="Hapus baris"><i class="fa-solid fa-trash-can"></i></button></td>';
-  row.querySelector(".spp-item-date").value = initial.itemDate || document.getElementById("sppBulkItemDate")?.value || document.getElementById("sppLetterDate")?.value || getLocalDateString();
-  row.querySelector(".spp-item-date-picker").value = row.querySelector(".spp-item-date").value;
+  row.innerHTML =
+    '<td class="p-2"><input class="spp-item-date hidden" type="hidden"/><input class="spp-item-date-picker mb-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-[10px]" type="date" aria-label="Tanggal barang" onchange="setSppItemDate(this)"/><select class="spp-item-select mb-1 w-full rounded-lg border border-slate-200 px-2 py-2" onchange="selectSppDatabaseItem(this)"><option value="">Pilih tanggal barang terlebih dahulu</option></select><input class="spp-item-name w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[10px]" maxlength="140" placeholder="Nama barang" readonly/></td><td class="p-2"><input class="spp-item-quantity w-20 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2" type="number" min="0" step="any" placeholder="Qty" readonly/><small class="spp-item-unit-label ml-1 text-slate-500"></small><input class="spp-item-unit hidden" type="text"/></td><td class="p-2"><input class="spp-item-price w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2" type="number" min="0" step="any" placeholder="Harga" readonly/></td><td class="p-2"><input class="spp-item-amount w-full rounded-lg border border-slate-200 bg-sky-50 px-2 py-2 font-bold" type="number" min="0" step="any" placeholder="Total" readonly/></td><td class="p-2"><input class="spp-item-account w-full rounded-lg border border-slate-200 px-2 py-2" maxlength="80" placeholder="Otomatis dari supplier"/></td><td class="p-2"><input class="spp-item-bank w-full rounded-lg border border-slate-200 px-2 py-2" maxlength="100" placeholder="Otomatis dari supplier"/></td><td class="p-2"><select class="spp-item-supplier-select mb-1 w-full rounded-lg border border-slate-200 px-2 py-2" onchange="selectSppDatabaseSupplier(this)"><option value="">Memuat supplier dari database...</option></select><input class="spp-item-supplier w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[10px]" maxlength="140" placeholder="Nama supplier" readonly/></td><td class="p-2"><button type="button" class="spp-remove-row rounded-lg bg-rose-50 px-2 py-2 text-rose-600" aria-label="Hapus baris"><i class="fa-solid fa-trash-can"></i></button></td>';
+  row.querySelector(".spp-item-date").value =
+    initial.itemDate ||
+    document.getElementById("sppBulkItemDate")?.value ||
+    document.getElementById("sppLetterDate")?.value ||
+    getLocalDateString();
+  row.querySelector(".spp-item-date-picker").value =
+    row.querySelector(".spp-item-date").value;
   row.querySelector(".spp-item-name").value = initial.itemName || "";
   row.querySelector(".spp-item-amount").value = initial.amount || "";
   row.querySelector(".spp-item-account").value = initial.accountNumber || "";
@@ -2617,9 +3468,13 @@ window.addSppSupplierRow = function (initial = {}) {
   row.querySelector(".spp-item-supplier").value = initial.supplierName || "";
   row.querySelector(".spp-remove-row").addEventListener("click", () => {
     if (tbody.children.length === 1) {
-      row.querySelectorAll("input, select").forEach((input) => { input.value = ""; });
+      row.querySelectorAll("input, select").forEach((input) => {
+        input.value = "";
+      });
       window.selectSppDatabaseItem(row.querySelector(".spp-item-select"));
-      window.selectSppDatabaseSupplier(row.querySelector(".spp-item-supplier-select"));
+      window.selectSppDatabaseSupplier(
+        row.querySelector(".spp-item-supplier-select"),
+      );
     } else row.remove();
     window.updateSppPaymentTotal();
   });
@@ -2627,8 +3482,17 @@ window.addSppSupplierRow = function (initial = {}) {
   window.refreshSppDatabaseOptions(row);
   const itemSelect = row.querySelector(".spp-item-select");
   if (initial.itemId && itemSelect) {
-    if (![...itemSelect.options].some((option) => option.value === String(initial.itemId))) {
-      itemSelect.add(new Option(`${initial.itemName || "Barang tersimpan"} · ${initial.unit || ""}`, String(initial.itemId)));
+    if (
+      ![...itemSelect.options].some(
+        (option) => option.value === String(initial.itemId),
+      )
+    ) {
+      itemSelect.add(
+        new Option(
+          `${initial.itemName || "Barang tersimpan"} · ${initial.unit || ""}`,
+          String(initial.itemId),
+        ),
+      );
     }
     itemSelect.value = String(initial.itemId);
     window.selectSppDatabaseItem(itemSelect);
@@ -2641,8 +3505,17 @@ window.addSppSupplierRow = function (initial = {}) {
   }
   const supplierSelect = row.querySelector(".spp-item-supplier-select");
   if (initial.supplierId && supplierSelect) {
-    if (![...supplierSelect.options].some((option) => option.value === String(initial.supplierId))) {
-      supplierSelect.add(new Option(initial.supplierName || "Supplier tersimpan", String(initial.supplierId)));
+    if (
+      ![...supplierSelect.options].some(
+        (option) => option.value === String(initial.supplierId),
+      )
+    ) {
+      supplierSelect.add(
+        new Option(
+          initial.supplierName || "Supplier tersimpan",
+          String(initial.supplierId),
+        ),
+      );
     }
     supplierSelect.value = String(initial.supplierId);
     window.selectSppDatabaseSupplier(supplierSelect);
@@ -2678,22 +3551,44 @@ window.setSppItemDate = function (input) {
 
 window.addAllSppItemsForDate = function (button) {
   const sourceRow = button.closest("tr");
-  const date = document.getElementById("sppBulkItemDate")?.value || sourceRow?.querySelector(".spp-item-date")?.value || "";
+  const date =
+    document.getElementById("sppBulkItemDate")?.value ||
+    sourceRow?.querySelector(".spp-item-date")?.value ||
+    "";
   if (!date) return showToast("Pilih tanggal barang terlebih dahulu", "error");
-  if (!window.appState.barangLoaded) return showToast("Data barang masih dimuat", "info");
-  const items = (window.appState.barang || []).filter((item) => String(item.tanggal || "") === date);
-  if (!items.length) return showToast("Tidak ada barang pada tanggal tersebut", "info");
+  if (!window.appState.barangLoaded)
+    return showToast("Data barang masih dimuat", "info");
+  const items = (window.appState.barang || []).filter(
+    (item) => String(item.tanggal || "") === date,
+  );
+  if (!items.length)
+    return showToast("Tidak ada barang pada tanggal tersebut", "info");
 
   const existingRows = [...document.querySelectorAll("#sppSupplierRows tr")];
-  const alreadyAdded = new Set(existingRows
-    .filter((row) => row.querySelector(".spp-item-date")?.value === date)
-    .map((row) => row.querySelector(".spp-item-select")?.value)
-    .filter(Boolean));
-  const pendingItems = items.filter((item) => !alreadyAdded.has(String(item.id)));
-  if (!pendingItems.length) return showToast("Semua barang pada tanggal ini sudah ditambahkan", "info");
+  const alreadyAdded = new Set(
+    existingRows
+      .filter((row) => row.querySelector(".spp-item-date")?.value === date)
+      .map((row) => row.querySelector(".spp-item-select")?.value)
+      .filter(Boolean),
+  );
+  const pendingItems = items.filter(
+    (item) => !alreadyAdded.has(String(item.id)),
+  );
+  if (!pendingItems.length)
+    return showToast("Semua barang pada tanggal ini sudah ditambahkan", "info");
 
-  let reusableRow = existingRows.find((row) => !row.querySelector(".spp-item-select")?.value && !row.querySelector(".spp-item-supplier-select")?.value) || null;
-  if (reusableRow && (reusableRow.querySelector(".spp-item-select")?.value || reusableRow.querySelector(".spp-item-supplier-select")?.value)) reusableRow = null;
+  let reusableRow =
+    existingRows.find(
+      (row) =>
+        !row.querySelector(".spp-item-select")?.value &&
+        !row.querySelector(".spp-item-supplier-select")?.value,
+    ) || null;
+  if (
+    reusableRow &&
+    (reusableRow.querySelector(".spp-item-select")?.value ||
+      reusableRow.querySelector(".spp-item-supplier-select")?.value)
+  )
+    reusableRow = null;
   pendingItems.forEach((item) => {
     const row = reusableRow || window.addSppSupplierRow({ itemDate: date });
     reusableRow = null;
@@ -2709,11 +3604,16 @@ window.addAllSppItemsForDate = function (button) {
     }
   });
   window.updateSppPaymentTotal();
-  showToast(`${pendingItems.length} barang berhasil ditambahkan. Pilih supplier untuk setiap barang.`, "success");
+  showToast(
+    `${pendingItems.length} barang berhasil ditambahkan. Pilih supplier untuk setiap barang.`,
+    "success",
+  );
 };
 
 window.updateSppPaymentTotal = function () {
-  const amount = [...(document.querySelectorAll(".spp-item-amount") || [])].reduce((sum, input) => sum + (Number(input.value) || 0), 0);
+  const amount = [
+    ...(document.querySelectorAll(".spp-item-amount") || []),
+  ].reduce((sum, input) => sum + (Number(input.value) || 0), 0);
   const output = document.getElementById("sppTotalAmount");
   if (output) output.textContent = `Rp ${amount.toLocaleString("id-ID")}`;
   return amount;
@@ -2724,37 +3624,77 @@ function normalizeSppAttachments(attachments) {
     const sheets = [];
     for (let start = 0; start < photos.length; start += layout) {
       const pagePhotos = photos.slice(start, start + layout);
-      sheets.push({ layout: allowShortLast ? pagePhotos.length : layout, photos: pagePhotos });
+      sheets.push({
+        layout: allowShortLast ? pagePhotos.length : layout,
+        photos: pagePhotos,
+      });
     }
     return sheets;
   };
-  if (Array.isArray(attachments)) return { productLayouts: makeSheets(attachments, 1), invoicePhotos: [] };
-  const oldPhotos = Array.isArray(attachments?.productPhotos) ? attachments.productPhotos : [];
+  if (Array.isArray(attachments))
+    return { productLayouts: makeSheets(attachments, 1), invoicePhotos: [] };
+  const oldPhotos = Array.isArray(attachments?.productPhotos)
+    ? attachments.productPhotos
+    : [];
   const productLayouts = Array.isArray(attachments?.productLayouts)
-    ? attachments.productLayouts.flatMap((group) => makeSheets(
-      Array.isArray(group?.photos) ? group.photos : [],
-      Math.min(6, Math.max(1, Number(group?.layout) || 1)),
-    ))
-    : makeSheets(oldPhotos, Math.min(6, Math.max(1, Number(attachments?.productPhotoLayout) || 1)), true);
+    ? attachments.productLayouts.flatMap((group) =>
+        makeSheets(
+          Array.isArray(group?.photos) ? group.photos : [],
+          Math.min(6, Math.max(1, Number(group?.layout) || 1)),
+        ),
+      )
+    : makeSheets(
+        oldPhotos,
+        Math.min(6, Math.max(1, Number(attachments?.productPhotoLayout) || 1)),
+        true,
+      );
   return {
     productLayouts,
-    invoicePhotos: Array.isArray(attachments?.invoicePhotos) ? attachments.invoicePhotos : [],
+    invoicePhotos: Array.isArray(attachments?.invoicePhotos)
+      ? attachments.invoicePhotos
+      : [],
   };
 }
 
 function renderSppAttachmentPreviews() {
   const productPreview = document.getElementById("sppProductPhotoPreviews");
   const productStatus = document.getElementById("sppProductPhotoStatus");
-  if (productPreview) productPreview.innerHTML = sppProductPhotoLayouts.map((group, groupIndex) => `<section class="col-span-full rounded-lg border border-sky-100 bg-sky-50/50 p-2"><div class="mb-2 flex items-center justify-between gap-2"><span class="text-[10px] font-bold text-sky-800">Lembar ${groupIndex + 1} · layout ${group.layout} foto · ${group.photos.length}/${group.layout}</span><button type="button" onclick="removeSppProductLayout(${groupIndex})" class="text-[10px] font-semibold text-rose-600">Hapus lembar</button></div><div class="grid grid-cols-2 gap-2 sm:grid-cols-3">${group.photos.map((photo, photoIndex) => `<figure class="relative overflow-hidden rounded-lg border border-slate-200 bg-white"><img src="${escapeHtml(photo.dataUrl || "")}" alt="${escapeHtml(photo.name || "Lampiran")}" class="h-24 w-full object-cover"><figcaption class="truncate p-1.5 pr-7 text-[9px] text-slate-500">${escapeHtml(photo.name || "Lampiran")}</figcaption><button type="button" onclick="removeSppAttachment('product', ${groupIndex}, ${photoIndex})" aria-label="Hapus ${escapeHtml(photo.name || "foto")}" class="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-white/95 text-rose-600 shadow"><i class="fa-solid fa-xmark"></i></button></figure>`).join("")}</div></section>`).join("");
-  const productCount = sppProductPhotoLayouts.reduce((sum, group) => sum + group.photos.length, 0);
-  if (productStatus) productStatus.textContent = sppProductPhotoLayouts.length ? `${sppProductPhotoLayouts.length} lembar foto barang (${productCount} foto).` : "Belum ada lembar foto barang.";
+  if (productPreview)
+    productPreview.innerHTML = sppProductPhotoLayouts
+      .map(
+        (group, groupIndex) =>
+          `<section class="col-span-full rounded-lg border border-sky-100 bg-sky-50/50 p-2"><div class="mb-2 flex items-center justify-between gap-2"><span class="text-[10px] font-bold text-sky-800">Lembar ${groupIndex + 1} · layout ${group.layout} foto · ${group.photos.length}/${group.layout}</span><button type="button" onclick="removeSppProductLayout(${groupIndex})" class="text-[10px] font-semibold text-rose-600">Hapus lembar</button></div><div class="grid grid-cols-2 gap-2 sm:grid-cols-3">${group.photos.map((photo, photoIndex) => `<figure class="relative overflow-hidden rounded-lg border border-slate-200 bg-white"><img src="${escapeHtml(photo.dataUrl || "")}" alt="${escapeHtml(photo.name || "Lampiran")}" class="h-24 w-full object-cover"><figcaption class="truncate p-1.5 pr-7 text-[9px] text-slate-500">${escapeHtml(photo.name || "Lampiran")}</figcaption><button type="button" onclick="removeSppAttachment('product', ${groupIndex}, ${photoIndex})" aria-label="Hapus ${escapeHtml(photo.name || "foto")}" class="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-white/95 text-rose-600 shadow"><i class="fa-solid fa-xmark"></i></button></figure>`).join("")}</div></section>`,
+      )
+      .join("");
+  const productCount = sppProductPhotoLayouts.reduce(
+    (sum, group) => sum + group.photos.length,
+    0,
+  );
+  if (productStatus)
+    productStatus.textContent = sppProductPhotoLayouts.length
+      ? `${sppProductPhotoLayouts.length} lembar foto barang (${productCount} foto).`
+      : "Belum ada lembar foto barang.";
   const renderGroup = (photos, kind, previewId, statusId) => {
     const preview = document.getElementById(previewId);
     const status = document.getElementById(statusId);
-    if (preview) preview.innerHTML = photos.map((photo, index) => `<figure class="relative overflow-hidden rounded-lg border border-slate-200"><img src="${escapeHtml(photo.dataUrl || "")}" alt="${escapeHtml(photo.name || "Lampiran")}" class="h-24 w-full object-cover"><figcaption class="truncate p-1.5 pr-7 text-[9px] text-slate-500">${escapeHtml(photo.name || "Lampiran")}</figcaption><button type="button" onclick="removeSppAttachment('${kind}', ${index})" aria-label="Hapus ${escapeHtml(photo.name || "foto")}" class="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-white/95 text-rose-600 shadow"><i class="fa-solid fa-xmark"></i></button></figure>`).join("");
-    if (status) status.textContent = photos.length ? `${photos.length} foto nota · ${photos.length} halaman.` : "Belum ada foto nota.";
+    if (preview)
+      preview.innerHTML = photos
+        .map(
+          (photo, index) =>
+            `<figure class="relative overflow-hidden rounded-lg border border-slate-200"><img src="${escapeHtml(photo.dataUrl || "")}" alt="${escapeHtml(photo.name || "Lampiran")}" class="h-24 w-full object-cover"><figcaption class="truncate p-1.5 pr-7 text-[9px] text-slate-500">${escapeHtml(photo.name || "Lampiran")}</figcaption><button type="button" onclick="removeSppAttachment('${kind}', ${index})" aria-label="Hapus ${escapeHtml(photo.name || "foto")}" class="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-white/95 text-rose-600 shadow"><i class="fa-solid fa-xmark"></i></button></figure>`,
+        )
+        .join("");
+    if (status)
+      status.textContent = photos.length
+        ? `${photos.length} foto nota · ${photos.length} halaman.`
+        : "Belum ada foto nota.";
   };
-  renderGroup(sppInvoicePhotos, "invoice", "sppInvoicePhotoPreviews", "sppInvoicePhotoStatus");
+  renderGroup(
+    sppInvoicePhotos,
+    "invoice",
+    "sppInvoicePhotoPreviews",
+    "sppInvoicePhotoStatus",
+  );
 }
 
 window.setSppProductPhotoLayout = function (value) {
@@ -2762,11 +3702,22 @@ window.setSppProductPhotoLayout = function (value) {
 };
 
 window.addSppProductPhotoLayout = function () {
-  const layout = Math.min(6, Math.max(1, Number(document.getElementById("sppProductPhotoLayout")?.value) || 1));
+  const layout = Math.min(
+    6,
+    Math.max(
+      1,
+      Number(document.getElementById("sppProductPhotoLayout")?.value) || 1,
+    ),
+  );
   sppProductPhotoLayout = layout;
-  const incomplete = sppProductPhotoLayouts.find((group) => group.photos.length < group.layout);
+  const incomplete = sppProductPhotoLayouts.find(
+    (group) => group.photos.length < group.layout,
+  );
   if (incomplete) {
-    showToast(`Lengkapi lembar layout ${incomplete.layout} terlebih dahulu (${incomplete.photos.length}/${incomplete.layout} foto)`, "info");
+    showToast(
+      `Lengkapi lembar layout ${incomplete.layout} terlebih dahulu (${incomplete.photos.length}/${incomplete.layout} foto)`,
+      "info",
+    );
     document.getElementById("sppProductPhotoFiles")?.click();
     return;
   }
@@ -2785,7 +3736,8 @@ window.removeSppAttachment = function (kind, groupIndex, photoIndex) {
   else {
     const group = sppProductPhotoLayouts[groupIndex];
     group?.photos.splice(photoIndex, 1);
-    if (group && !group.photos.length) sppProductPhotoLayouts.splice(groupIndex, 1);
+    if (group && !group.photos.length)
+      sppProductPhotoLayouts.splice(groupIndex, 1);
   }
   renderSppAttachmentPreviews();
 };
@@ -2820,89 +3772,187 @@ window.loadSppDatabaseProductPhotos = async function () {
   }
 
   const items = (window.appState?.barang || []).filter((item) => {
-    const matchingArrival = (Array.isArray(item.arrivalHistory) ? item.arrivalHistory : [])
-      .some((arrival) => getSppPhotoDate(arrival.receivedAt || arrival.recordedAt) === selectedDate);
-    return getSppPhotoDate(item.tanggal || item.date) === selectedDate || matchingArrival;
+    const matchingArrival = (
+      Array.isArray(item.arrivalHistory) ? item.arrivalHistory : []
+    ).some(
+      (arrival) =>
+        getSppPhotoDate(arrival.receivedAt || arrival.recordedAt) ===
+        selectedDate,
+    );
+    return (
+      getSppPhotoDate(item.tanggal || item.date) === selectedDate ||
+      matchingArrival
+    );
   });
-  status.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Memuat foto dari database...';
-  const photos = await Promise.all(items.map(async (item) => {
-    const matchingArrivals = (Array.isArray(item.arrivalHistory) ? item.arrivalHistory : [])
-      .filter((entry) => getSppPhotoDate(entry.receivedAt || entry.recordedAt) === selectedDate)
-      .sort((a, b) => String(b.recordedAt || b.receivedAt || "").localeCompare(String(a.recordedAt || a.receivedAt || "")));
-    const arrival = matchingArrivals[0] || (getSppPhotoDate(item.tanggal || item.date) === selectedDate ? getLatestArrival(item) : null);
-    let dataUrl = arrival?.photoDataUrl
-      || (arrival?.photoId ? window.appState?.arrivalPhotoCache?.[arrival.photoId] : "")
-      || arrival?.photoUrl
-      || item.fotoPenerimaan || item.foto || item.fotoUrl || item.imageUrl
-      || (!arrival?.photoId ? item.img : "") || "";
-    if (!dataUrl && arrival?.photoId) {
-      try {
-        const snapshot = await getDoc(doc(db, "barang_arrival_photos", String(arrival.photoId)));
-        const photoData = snapshot.exists() ? snapshot.data() : null;
-        dataUrl = photoData?.dataUrl || photoData?.base64 || photoData?.foto || photoData?.image || "";
-        if (dataUrl) {
-          window.appState.arrivalPhotoCache ||= {};
-          window.appState.arrivalPhotoCache[arrival.photoId] = dataUrl;
+  status.innerHTML =
+    '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Memuat foto dari database...';
+  const photos = await Promise.all(
+    items.map(async (item) => {
+      const matchingArrivals = (
+        Array.isArray(item.arrivalHistory) ? item.arrivalHistory : []
+      )
+        .filter(
+          (entry) =>
+            getSppPhotoDate(entry.receivedAt || entry.recordedAt) ===
+            selectedDate,
+        )
+        .sort((a, b) =>
+          String(b.recordedAt || b.receivedAt || "").localeCompare(
+            String(a.recordedAt || a.receivedAt || ""),
+          ),
+        );
+      const arrival =
+        matchingArrivals[0] ||
+        (getSppPhotoDate(item.tanggal || item.date) === selectedDate
+          ? getLatestArrival(item)
+          : null);
+      let dataUrl =
+        arrival?.photoDataUrl ||
+        (arrival?.photoId
+          ? window.appState?.arrivalPhotoCache?.[arrival.photoId]
+          : "") ||
+        arrival?.photoUrl ||
+        item.fotoPenerimaan ||
+        item.foto ||
+        item.fotoUrl ||
+        item.imageUrl ||
+        (!arrival?.photoId ? item.img : "") ||
+        "";
+      if (!dataUrl && arrival?.photoId) {
+        try {
+          const snapshot = await getDoc(
+            doc(db, "barang_arrival_photos", String(arrival.photoId)),
+          );
+          const photoData = snapshot.exists() ? snapshot.data() : null;
+          dataUrl =
+            photoData?.dataUrl ||
+            photoData?.base64 ||
+            photoData?.foto ||
+            photoData?.image ||
+            "";
+          if (dataUrl) {
+            window.appState.arrivalPhotoCache ||= {};
+            window.appState.arrivalPhotoCache[arrival.photoId] = dataUrl;
+          }
+        } catch (error) {
+          console.warn("Foto penerimaan tidak dapat dimuat:", error);
         }
-      } catch (error) {
-        console.warn("Foto penerimaan tidak dapat dimuat:", error);
       }
-    }
-    if (!dataUrl || !/^data:image\//i.test(dataUrl) && !/^https?:\/\//i.test(dataUrl)) return null;
-    return {
-      key: `${item.id || item.nama || item.name}-${arrival?.photoId || "item"}`,
-      name: item.nama || item.name || "Foto barang",
-      dataUrl,
-      date: selectedDate,
-      detail: `${item.satuan || item.unit || ""}${arrival?.jumlah ? ` · ${arrival.jumlah} ${item.satuan || item.unit || ""}` : ""}`.trim(),
-    };
-  }));
-  if (loadVersion !== sppDatabasePhotoLoadVersion || dateInput.value !== selectedDate) return;
+      if (
+        !dataUrl ||
+        (!/^data:image\//i.test(dataUrl) && !/^https?:\/\//i.test(dataUrl))
+      )
+        return null;
+      return {
+        key: `${item.id || item.nama || item.name}-${arrival?.photoId || "item"}`,
+        name: item.nama || item.name || "Foto barang",
+        dataUrl,
+        date: selectedDate,
+        detail:
+          `${item.satuan || item.unit || ""}${arrival?.jumlah ? ` · ${arrival.jumlah} ${item.satuan || item.unit || ""}` : ""}`.trim(),
+      };
+    }),
+  );
+  if (
+    loadVersion !== sppDatabasePhotoLoadVersion ||
+    dateInput.value !== selectedDate
+  )
+    return;
   sppDatabaseProductPhotos = photos.filter(Boolean);
   if (!sppDatabaseProductPhotos.length) {
-    status.textContent = items.length ? "Tidak ada foto penerimaan tersimpan untuk tanggal ini." : "Tidak ada barang di database pada tanggal ini.";
+    status.textContent = items.length
+      ? "Tidak ada foto penerimaan tersimpan untuk tanggal ini."
+      : "Tidak ada barang di database pada tanggal ini.";
     return;
   }
   status.textContent = `${sppDatabaseProductPhotos.length} foto barang ditemukan. Pilih foto, lalu tambahkan ke lembar layout yang aktif.`;
-  list.innerHTML = sppDatabaseProductPhotos.map((photo, index) => `<label class="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 p-2 hover:border-sky-300"><input type="checkbox" class="spp-db-product-photo h-4 w-4 accent-sky-700" value="${index}"><img src="${escapeHtml(photo.dataUrl)}" alt="${escapeHtml(photo.name)}" class="h-14 w-14 rounded-md object-cover"><span class="min-w-0 flex-1"><span class="block truncate text-[10px] font-semibold text-slate-700">${escapeHtml(photo.name)}</span><span class="block text-[9px] text-slate-500">${escapeHtml(photo.date)}${photo.detail ? ` · ${escapeHtml(photo.detail)}` : ""}</span></span></label>`).join("");
+  list.innerHTML = sppDatabaseProductPhotos
+    .map(
+      (photo, index) =>
+        `<label class="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 p-2 hover:border-sky-300"><input type="checkbox" class="spp-db-product-photo h-4 w-4 accent-sky-700" value="${index}"><img src="${escapeHtml(photo.dataUrl)}" alt="${escapeHtml(photo.name)}" class="h-14 w-14 rounded-md object-cover"><span class="min-w-0 flex-1"><span class="block truncate text-[10px] font-semibold text-slate-700">${escapeHtml(photo.name)}</span><span class="block text-[9px] text-slate-500">${escapeHtml(photo.date)}${photo.detail ? ` · ${escapeHtml(photo.detail)}` : ""}</span></span></label>`,
+    )
+    .join("");
 };
 
 window.addSelectedSppDatabaseProductPhotos = function () {
-  const targetGroup = sppProductPhotoLayouts.find((group) => group.photos.length < group.layout);
-  if (!targetGroup) return showToast("Tambah lembar foto dan pilih layout terlebih dahulu", "info");
-  const selected = [...document.querySelectorAll(".spp-db-product-photo:checked")]
+  const targetGroup = sppProductPhotoLayouts.find(
+    (group) => group.photos.length < group.layout,
+  );
+  if (!targetGroup)
+    return showToast(
+      "Tambah lembar foto dan pilih layout terlebih dahulu",
+      "info",
+    );
+  const selected = [
+    ...document.querySelectorAll(".spp-db-product-photo:checked"),
+  ]
     .map((input) => sppDatabaseProductPhotos[Number(input.value)])
     .filter(Boolean);
-  if (!selected.length) return showToast("Pilih setidaknya satu foto barang", "info");
+  if (!selected.length)
+    return showToast("Pilih setidaknya satu foto barang", "info");
   const remaining = targetGroup.layout - targetGroup.photos.length;
-  if (selected.length > remaining) return showToast(`Layout ini hanya membutuhkan ${remaining} foto lagi`, "error");
-  targetGroup.photos.push(...selected.map((photo) => ({ name: photo.name, dataUrl: photo.dataUrl })));
+  if (selected.length > remaining)
+    return showToast(
+      `Layout ini hanya membutuhkan ${remaining} foto lagi`,
+      "error",
+    );
+  targetGroup.photos.push(
+    ...selected.map((photo) => ({ name: photo.name, dataUrl: photo.dataUrl })),
+  );
   renderSppAttachmentPreviews();
-  document.querySelectorAll(".spp-db-product-photo:checked").forEach((input) => { input.checked = false; });
+  document
+    .querySelectorAll(".spp-db-product-photo:checked")
+    .forEach((input) => {
+      input.checked = false;
+    });
 };
 
 window.prepareSppAttachments = async function (event, kind = "product") {
   const files = [...(event.target.files || [])];
-  const targetGroup = kind === "invoice" ? null : sppProductPhotoLayouts.find((group) => group.photos.length < group.layout);
+  const targetGroup =
+    kind === "invoice"
+      ? null
+      : sppProductPhotoLayouts.find(
+          (group) => group.photos.length < group.layout,
+        );
   const photos = kind === "invoice" ? sppInvoicePhotos : targetGroup?.photos;
-  const status = document.getElementById(kind === "invoice" ? "sppInvoicePhotoStatus" : "sppProductPhotoStatus");
+  const status = document.getElementById(
+    kind === "invoice" ? "sppInvoicePhotoStatus" : "sppProductPhotoStatus",
+  );
   if (kind === "product" && !targetGroup) {
     event.target.value = "";
-    if (status) status.textContent = "Tambahkan lembar dan pilih layout terlebih dahulu.";
+    if (status)
+      status.textContent = "Tambahkan lembar dan pilih layout terlebih dahulu.";
     return showToast("Klik Tambah lembar foto lalu pilih layout 1–6", "info");
   }
-  if (files.some((file) => !["image/jpeg", "image/png", "image/webp"].includes(file.type))) {
+  if (
+    files.some(
+      (file) => !["image/jpeg", "image/png", "image/webp"].includes(file.type),
+    )
+  ) {
     event.target.value = "";
     if (status) status.textContent = "Format foto harus JPG, PNG, atau WebP.";
     return showToast("Pilih foto dengan format JPG, PNG, atau WebP", "error");
   }
-  const maxCount = kind === "product" ? targetGroup.layout - photos.length : 8 - photos.length;
+  const maxCount =
+    kind === "product" ? targetGroup.layout - photos.length : 8 - photos.length;
   if (files.length > maxCount) {
     event.target.value = "";
-    if (status) status.textContent = kind === "product" ? `Layout lembar ini maksimal ${targetGroup.layout} foto.` : "Maksimal 8 foto nota.";
-    return showToast(kind === "product" ? `Pilih maksimal ${maxCount} foto lagi untuk layout ${targetGroup.layout}` : "Maksimal 8 foto nota", "error");
+    if (status)
+      status.textContent =
+        kind === "product"
+          ? `Layout lembar ini maksimal ${targetGroup.layout} foto.`
+          : "Maksimal 8 foto nota.";
+    return showToast(
+      kind === "product"
+        ? `Pilih maksimal ${maxCount} foto lagi untuk layout ${targetGroup.layout}`
+        : "Maksimal 8 foto nota",
+      "error",
+    );
   }
-  if (status) status.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Mengompres foto...';
+  if (status)
+    status.innerHTML =
+      '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Mengompres foto...';
   try {
     const compressedPhotos = [];
     for (const file of files) {
@@ -2912,7 +3962,8 @@ window.prepareSppAttachments = async function (event, kind = "product") {
     photos.push(...compressedPhotos);
     renderSppAttachmentPreviews();
   } catch (error) {
-    if (status) status.textContent = error.message || "Foto lampiran gagal diproses.";
+    if (status)
+      status.textContent = error.message || "Foto lampiran gagal diproses.";
     showToast(error.message || "Foto lampiran gagal diproses", "error");
   } finally {
     event.target.value = "";
@@ -2926,28 +3977,54 @@ function showSppPreview(data, isSample = false) {
   const kitchen = safe(settings.kitchenName || "Nama SPPG / Dapur");
   const address = safe(settings.kitchenAddress || "Alamat SPPG");
   const phone = safe(settings.kitchenPhone || "");
-  const logoUrl = typeof settings.foundationLogoDataUrl === "string" && settings.foundationLogoDataUrl.startsWith("data:image/") ? settings.foundationLogoDataUrl : "";
-  const total = data.suppliers.reduce((sum, supplier) => sum + Number(supplier.amount || 0), 0);
-  const supplierRows = data.suppliers.map((supplier, index) => `<tr><td class="center">${index + 1}</td><td>${safe(supplier.itemName)}</td><td class="number">${Number(supplier.quantity || 0).toLocaleString("id-ID")}</td><td class="center">${safe(supplier.unit)}</td><td class="number">Rp ${Number(supplier.unitPrice || 0).toLocaleString("id-ID")}</td><td class="number">Rp ${Number(supplier.amount || 0).toLocaleString("id-ID")}</td><td>${safe(supplier.accountNumber)}</td><td>${safe(supplier.bankName)}</td><td>${safe(supplier.supplierName)}</td></tr>`).join("");
+  const logoUrl =
+    typeof settings.foundationLogoDataUrl === "string" &&
+    settings.foundationLogoDataUrl.startsWith("data:image/")
+      ? settings.foundationLogoDataUrl
+      : "";
+  const total = data.suppliers.reduce(
+    (sum, supplier) => sum + Number(supplier.amount || 0),
+    0,
+  );
+  const supplierRows = data.suppliers
+    .map(
+      (supplier, index) =>
+        `<tr><td class="center">${index + 1}</td><td>${safe(supplier.itemName)}</td><td class="number">${Number(supplier.quantity || 0).toLocaleString("id-ID")}</td><td class="center">${safe(supplier.unit)}</td><td class="number">Rp ${Number(supplier.unitPrice || 0).toLocaleString("id-ID")}</td><td class="number">Rp ${Number(supplier.amount || 0).toLocaleString("id-ID")}</td><td>${safe(supplier.accountNumber)}</td><td>${safe(supplier.bankName)}</td><td>${safe(supplier.supplierName)}</td></tr>`,
+    )
+    .join("");
   const totalRow = `<tr class="sumrow"><td colspan="5" class="center"><b>JUMLAH</b></td><td class="number"><b>Rp ${total.toLocaleString("id-ID")}</b></td><td colspan="3"></td></tr>`;
   const attachments = normalizeSppAttachments(data.attachments);
-  const productCollages = attachments.productLayouts.map((group, index) => `<article class="product-collage"><h3>FOTO BARANG · LAYOUT ${index + 1} (${group.layout} FOTO)</h3><div class="product-photo-grid layout-${group.layout}">${group.photos.map((photo) => `<figure><img src="${safe(photo.dataUrl)}" alt="${safe(photo.name)}"><figcaption>${safe(photo.name)}</figcaption></figure>`).join("")}</div></article>`);
+  const productCollages = attachments.productLayouts.map(
+    (group, index) =>
+      `<article class="product-collage"><h3>FOTO BARANG · LAYOUT ${index + 1} (${group.layout} FOTO)</h3><div class="product-photo-grid layout-${group.layout}">${group.photos.map((photo) => `<figure><img src="${safe(photo.dataUrl)}" alt="${safe(photo.name)}"><figcaption>${safe(photo.name)}</figcaption></figure>`).join("")}</div></article>`,
+  );
   const productPhotoSheets = [];
   for (let start = 0; start < productCollages.length; start += 2) {
-    productPhotoSheets.push(`<section class="attachment-sheet product-sheet"><div class="product-collage-stack">${productCollages.slice(start, start + 2).join("")}</div></section>`);
+    productPhotoSheets.push(
+      `<section class="attachment-sheet product-sheet"><div class="product-collage-stack">${productCollages.slice(start, start + 2).join("")}</div></section>`,
+    );
   }
-  const invoicePhotoSheets = attachments.invoicePhotos.map((photo, index) => `<section class="attachment-sheet invoice-sheet"><h3>FOTO NOTA · LEMBAR ${index + 1}/${attachments.invoicePhotos.length}</h3><figure><img src="${safe(photo.dataUrl)}" alt="${safe(photo.name)}"><figcaption>${safe(photo.name)}</figcaption></figure></section>`);
-  const hasAttachments = productPhotoSheets.length + invoicePhotoSheets.length > 0;
+  const invoicePhotoSheets = attachments.invoicePhotos.map(
+    (photo, index) =>
+      `<section class="attachment-sheet invoice-sheet"><h3>FOTO NOTA · LEMBAR ${index + 1}/${attachments.invoicePhotos.length}</h3><figure><img src="${safe(photo.dataUrl)}" alt="${safe(photo.name)}"><figcaption>${safe(photo.name)}</figcaption></figure></section>`,
+  );
+  const hasAttachments =
+    productPhotoSheets.length + invoicePhotoSheets.length > 0;
   const attachmentsHtml = hasAttachments
     ? [...productPhotoSheets, ...invoicePhotoSheets].join("")
     : `<p class="empty-attachments">${isSample ? "Contoh lampiran foto barang dan foto nota akan ditampilkan di halaman ini." : "Tidak ada foto barang atau foto nota yang dilampirkan."}</p>`;
   const purpose = safe(data.purpose).replace(/\r?\n/g, "<br>");
-  const recipientAddress = safe(data.recipientAddress).replace(/\r?\n/g, "<br>");
+  const recipientAddress = safe(data.recipientAddress).replace(
+    /\r?\n/g,
+    "<br>",
+  );
   const place = safe(settings.kitchenAddress || kitchen);
   const html = `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:0;background:#e8edf2;color:#111;font:10px/1.45 Arial,sans-serif}.page{position:relative;width:210mm;min-height:297mm;margin:16px auto;padding:18mm 19mm;background:#fff;box-shadow:0 4px 20px #0002}.page-two{page-break-before:always}.kop{display:flex;align-items:center;justify-content:center;gap:12px;text-align:center;border-bottom:3px double #111;padding:0 0 9px}.logo{width:62px;height:62px;object-fit:contain;flex:none}.koptext{flex:1}.foundation{font-size:12px;font-weight:bold;text-transform:uppercase}.kitchen{font-size:12px;font-weight:bold;text-transform:uppercase;margin-top:2px}.address,.contact{font-size:9px}.doc-title{text-align:center;font-weight:bold;margin:10px 0 14px;font-size:11px}.letter-number{margin:-8px 0 9px;text-align:center;font-size:9px}.properties{margin:0 0 2px}.recipient{margin:0 0 12px}.intro{margin:0 0 8px;text-align:justify}.summary-title{margin:10px auto 0;width:68%;border:1px solid #111;background:#dbe7f8;text-align:center;font-weight:bold;padding:3px}.summary-subtitle{margin:0 auto;width:68%;border:1px solid #111;border-top:0;background:#dbe7f8;text-align:center;font-weight:bold;padding:3px}.summary-date{margin:0 auto 8px;width:68%;border:1px solid #111;border-top:0;background:#dbe7f8;text-align:center;padding:3px}table{width:100%;border-collapse:collapse;font-size:8px;table-layout:fixed}th,td{border:1px solid #111;padding:5px 4px;overflow-wrap:anywhere;vertical-align:middle}th{background:#c9ddf2;text-align:center;font-weight:bold}.number{text-align:right;white-space:nowrap}.center{text-align:center}.sumrow td{background:#dbe7f8}.closing{margin:12px 0 0;text-align:justify}.date{text-align:right;margin:8px 0}.signature-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:center;margin-top:12px;font-size:9px}.signature{min-height:86px}.signature .gap{height:42px}.sign-name{font-weight:bold;text-decoration:underline}.head-sign{text-align:center;margin:4px auto 0;width:50%;font-size:9px}.head-sign .gap{height:44px}.page-heading{text-align:center;font-weight:bold;font-size:11px;margin:0 0 14px}.attachments{display:block}.attachment-sheet{break-inside:avoid;page-break-inside:avoid;min-height:238mm;padding:3mm 0}.attachment-sheet+.attachment-sheet{break-before:page;page-break-before:always}.attachment-sheet h3{text-align:center;font-size:11px;margin:0 0 8mm}.product-photo-grid{display:grid;gap:6mm;align-content:start}.product-photo-grid.layout-1,.product-photo-grid.layout-2{grid-template-columns:1fr}.product-photo-grid.layout-3,.product-photo-grid.layout-4{grid-template-columns:repeat(2,minmax(0,1fr))}.product-photo-grid.layout-5,.product-photo-grid.layout-6{grid-template-columns:repeat(3,minmax(0,1fr))}.product-photo-grid figure,.invoice-sheet figure{min-width:0;margin:0;border:1px solid #cbd5e1;padding:3mm;break-inside:avoid}.product-photo-grid img{display:block;width:100%;object-fit:contain}.product-photo-grid.layout-1 img{height:215mm}.product-photo-grid.layout-2 img{height:103mm}.product-photo-grid.layout-3 img,.product-photo-grid.layout-4 img{height:96mm}.product-photo-grid.layout-5 img,.product-photo-grid.layout-6 img{height:74mm}.invoice-sheet figure{height:232mm;display:flex;flex-direction:column;align-items:center;justify-content:center}.invoice-sheet img{display:block;width:100%;height:218mm;object-fit:contain}.attachment-sheet figcaption{margin-top:2mm;text-align:center;font-size:9px;overflow-wrap:anywhere}.empty-attachments{text-align:center;margin-top:30px;color:#666}.sample{position:absolute;right:19mm;top:6mm;font-size:8px;color:#94a3b8}@page{size:A4;margin:0}@media print{body{background:#fff}.page{width:210mm;min-height:297mm;margin:0;padding:18mm 19mm;box-shadow:none;page-break-after:always}.page:last-child{page-break-after:auto}.page-two.empty{display:none}.sample{display:none}}</style></head><body><main class="page">${isSample ? '<span class="sample">CONTOH TEMPLATE</span>' : ""}<header class="kop">${logoUrl ? `<img class="logo" src="${safe(logoUrl)}" alt="Logo">` : ""}<div class="koptext"><div class="foundation">${foundation}</div><div class="kitchen">${kitchen}</div><div class="address">${address}</div>${phone ? `<div class="contact">Telp. ${phone}</div>` : ""}</div></header><div class="doc-title">SURAT PERMINTAAN PEMBAYARAN</div><div class="letter-number">Nomor: ${safe(data.number)}</div><div class="properties">Sifat : ${safe(data.urgency)}<br>Perihal : ${safe(data.category)}</div><div class="recipient">Kepada Yth.<br><b>${safe(data.recipient)}</b>${recipientAddress ? `<br>${recipientAddress}` : ""}<br>Di Tempat</div><p class="intro">Sehubungan dengan pelaksanaan kegiatan Makan Bergizi Gratis tanggal ${safe(formatLetterDate(data.date))} di SPPG ${kitchen}, ${address}, maka kami mengajukan permintaan pembayaran dana belanja (kategori: ${safe(data.category)}). Biaya kepada pihak supplier sebagaimana rincian berikut:</p><div class="summary-title">REKAP BIAYA ${safe(data.category).toLocaleUpperCase("id-ID")}</div><div class="summary-subtitle">${kitchen.toLocaleUpperCase("id-ID")}</div><div class="summary-date">TANGGAL (${safe(formatLetterDate(data.date))})</div><table><thead><tr><th style="width:5%">NO</th><th style="width:18%">NAMA BARANG</th><th style="width:8%">QTY</th><th style="width:8%">SATUAN</th><th style="width:12%">HARGA SATUAN</th><th style="width:14%">TOTAL</th><th style="width:14%">NOMOR REKENING</th><th style="width:8%">NAMA BANK</th><th style="width:13%">NAMA SUPPLIER</th></tr></thead><tbody>${supplierRows}${totalRow}</tbody></table><p class="intro">Total pembayaran sebesar <b>Rp ${total.toLocaleString("id-ID")}</b> (<i>${safe(terbilangRupiah(total))}</i>). ${purpose}</p><p class="closing">Demikian surat permintaan pembayaran ini kami buat dan ajukan untuk digunakan sebagaimana mestinya. Atas perhatiannya kami ucapkan terima kasih.</p><p class="date">${place}, ${safe(formatLetterDate(data.date))}</p><div class="signature-grid"><div class="signature">Mengetahui,<br>PIC SPPG ${kitchen}<div class="gap"></div><div class="sign-name">${safe(data.picName)}</div></div><div class="signature">Akuntan SPPG ${kitchen}<div class="gap"></div><div class="sign-name">${safe(data.accountantName)}</div></div></div><div class="head-sign">Kepala SPPG ${kitchen}<div class="gap"></div><div class="sign-name">${safe(data.headName)}</div></div></main><section class="page page-two${hasAttachments ? "" : " empty"}"><div class="attachments">${attachmentsHtml}</div></section></body></html>`;
   const frame = document.getElementById("sppPreviewFrame");
   if (!frame) return;
-  frame.srcdoc = html.replace("</head>", `<style>
+  frame.srcdoc = html.replace(
+    "</head>",
+    `<style>
     .summary-title,.summary-subtitle,.summary-date{width:100%;margin-left:0;margin-right:0}
     .attachment-sheet{height:auto;min-height:0;padding:0;overflow:visible;display:block;break-inside:avoid;page-break-inside:avoid}
     .attachment-sheet h3{margin:0 0 2mm;font-size:8px;line-height:1}
@@ -2974,8 +4051,11 @@ function showSppPreview(data, isSample = false) {
     .invoice-sheet img{width:100%;height:68mm;max-width:85mm;object-fit:contain}
     .invoice-sheet figcaption{margin-top:1mm;font-size:7px;line-height:1.1;max-width:100%;overflow-wrap:anywhere}
     @media print{.attachment-sheet+.attachment-sheet{break-before:page;page-break-before:always}}
-  </style></head>`);
-  document.getElementById("sppPreviewTitle").textContent = isSample ? "Contoh Template Surat Permintaan Pembayaran" : "Pratinjau Surat Permintaan Pembayaran";
+  </style></head>`,
+  );
+  document.getElementById("sppPreviewTitle").textContent = isSample
+    ? "Contoh Template Surat Permintaan Pembayaran"
+    : "Pratinjau Surat Permintaan Pembayaran";
   document.getElementById("sppPreviewModal").classList.remove("hidden");
   document.getElementById("sppPreviewModal").classList.add("flex");
 }
@@ -2985,9 +4065,12 @@ window.openSppForm = function () {
   form?.reset();
   sppEditingLetterId = "";
   document.getElementById("sppLetterId").value = "";
-  document.getElementById("sppFormTitle").textContent = "Buat Surat Permintaan Pembayaran";
+  document.getElementById("sppFormTitle").textContent =
+    "Buat Surat Permintaan Pembayaran";
   const submitButton = form?.querySelector("button[type='submit']");
-  if (submitButton) submitButton.innerHTML = '<i class="fa-solid fa-eye mr-1"></i>Simpan &amp; Pratinjau';
+  if (submitButton)
+    submitButton.innerHTML =
+      '<i class="fa-solid fa-eye mr-1"></i>Simpan &amp; Pratinjau';
   const today = getLocalDateString();
   sppProductPhotoLayouts = [];
   sppInvoicePhotos = [];
@@ -3002,11 +4085,15 @@ window.openSppForm = function () {
   document.getElementById("sppLetterDate").value = today;
   document.getElementById("sppBulkItemDate").value = today;
   window.addSppSupplierRow();
-  document.querySelectorAll("#sppSupplierRows .spp-item-date").forEach((input) => {
-    if (!input.value) input.value = today;
-  });
+  document
+    .querySelectorAll("#sppSupplierRows .spp-item-date")
+    .forEach((input) => {
+      if (!input.value) input.value = today;
+    });
   const settings = getSppHeaderSettings();
-  document.getElementById("sppRecipient").value = settings.foundationName ? `Ketua ${settings.foundationName}` : "";
+  document.getElementById("sppRecipient").value = settings.foundationName
+    ? `Ketua ${settings.foundationName}`
+    : "";
   window.refreshSppDatabaseOptions();
   const modal = document.getElementById("sppFormModal");
   modal.classList.remove("hidden");
@@ -3015,36 +4102,53 @@ window.openSppForm = function () {
 };
 
 window.editSavedSppLetter = function (letterId) {
-  const letter = (window.appState.sppLetters || []).find((entry) => String(entry.id) === String(letterId));
+  const letter = (window.appState.sppLetters || []).find(
+    (entry) => String(entry.id) === String(letterId),
+  );
   if (!letter) return showToast("Surat tidak ditemukan", "error");
 
   window.openSppForm();
   sppEditingLetterId = String(letter.id);
   document.getElementById("sppLetterId").value = sppEditingLetterId;
-  document.getElementById("sppFormTitle").textContent = "Edit Surat Permintaan Pembayaran";
-  const submitButton = document.querySelector("#sppFormModal form button[type='submit']");
-  if (submitButton) submitButton.innerHTML = '<i class="fa-solid fa-floppy-disk mr-1"></i>Simpan Perubahan &amp; Pratinjau';
+  document.getElementById("sppFormTitle").textContent =
+    "Edit Surat Permintaan Pembayaran";
+  const submitButton = document.querySelector(
+    "#sppFormModal form button[type='submit']",
+  );
+  if (submitButton)
+    submitButton.innerHTML =
+      '<i class="fa-solid fa-floppy-disk mr-1"></i>Simpan Perubahan &amp; Pratinjau';
 
   document.getElementById("sppLetterNumber").value = letter.number || "";
   document.getElementById("sppLetterDate").value = letter.date || "";
   document.getElementById("sppUrgency").value = letter.urgency || "Segera";
   document.getElementById("sppRecipient").value = letter.recipient || "";
-  document.getElementById("sppRecipientAddress").value = letter.recipientAddress || "";
+  document.getElementById("sppRecipientAddress").value =
+    letter.recipientAddress || "";
   document.getElementById("sppCategory").value = letter.category || "";
   document.getElementById("sppPurpose").value = letter.purpose || "";
-  document.getElementById("sppBulkItemDate").value = letter.suppliers?.[0]?.itemDate || letter.date || getLocalDateString();
+  document.getElementById("sppBulkItemDate").value =
+    letter.suppliers?.[0]?.itemDate || letter.date || getLocalDateString();
 
   document.getElementById("sppSupplierRows").innerHTML = "";
   const suppliers = Array.isArray(letter.suppliers) ? letter.suppliers : [];
   (suppliers.length ? suppliers : [{}]).forEach((supplier) => {
-    window.addSppSupplierRow({ ...supplier, itemDate: supplier.itemDate || letter.date || "" });
+    window.addSppSupplierRow({
+      ...supplier,
+      itemDate: supplier.itemDate || letter.date || "",
+    });
   });
 
   const savedAttachments = normalizeSppAttachments(letter.attachments);
-  sppProductPhotoLayouts = savedAttachments.productLayouts.map((group) => ({ layout: group.layout, photos: [...group.photos] }));
+  sppProductPhotoLayouts = savedAttachments.productLayouts.map((group) => ({
+    layout: group.layout,
+    photos: [...group.photos],
+  }));
   sppInvoicePhotos = [...savedAttachments.invoicePhotos];
   sppProductPhotoLayout = sppProductPhotoLayouts.at(-1)?.layout || 1;
-  document.getElementById("sppProductPhotoLayout").value = String(sppProductPhotoLayout);
+  document.getElementById("sppProductPhotoLayout").value = String(
+    sppProductPhotoLayout,
+  );
   renderSppAttachmentPreviews();
   window.updateSppPaymentTotal();
 };
@@ -3063,29 +4167,51 @@ window.closeSppPreview = function () {
 
 window.printSppPreview = function () {
   const frame = document.getElementById("sppPreviewFrame");
-  if (!frame?.contentWindow) return showToast("Pratinjau surat belum siap", "error");
+  if (!frame?.contentWindow)
+    return showToast("Pratinjau surat belum siap", "error");
   frame.contentWindow.focus();
   frame.contentWindow.print();
 };
 
 window.previewSppTemplate = function () {
-  showSppPreview({
-    number: "001/SPPG/2026",
-    date: getLocalDateString(),
-    urgency: "Segera",
-    recipient: "Ketua Yayasan Rizqy Aneka Prima",
-    recipientAddress: "Di Tempat",
-    category: "Permintaan Pembayaran Dana Belanja Bahan Baku",
-    purpose: "Untuk belanja bahan baku kegiatan Makan Bergizi Gratis.",
-    suppliers: [
-      { itemName: "Beras", quantity: 120, unit: "Kg", unitPrice: 20000, amount: 2400000, accountNumber: "1234567890", bankName: "BRI", supplierName: "Toko Pangan Sejahtera" },
-      { itemName: "Telur Ayam", quantity: 90, unit: "Kg", unitPrice: 15000, amount: 1350000, accountNumber: "0987654321", bankName: "BSI", supplierName: "UD Sumber Rezeki" },
-    ],
-    attachments: { productLayouts: [], invoicePhotos: [] },
-    picName: "Nama PIC SPPG",
-    accountantName: "Nama Akuntan",
-    headName: "Nama Kepala SPPG",
-  }, true);
+  showSppPreview(
+    {
+      number: "001/SPPG/2026",
+      date: getLocalDateString(),
+      urgency: "Segera",
+      recipient: "Ketua Yayasan Rizqy Aneka Prima",
+      recipientAddress: "Di Tempat",
+      category: "Permintaan Pembayaran Dana Belanja Bahan Baku",
+      purpose: "Untuk belanja bahan baku kegiatan Makan Bergizi Gratis.",
+      suppliers: [
+        {
+          itemName: "Beras",
+          quantity: 120,
+          unit: "Kg",
+          unitPrice: 20000,
+          amount: 2400000,
+          accountNumber: "1234567890",
+          bankName: "BRI",
+          supplierName: "Toko Pangan Sejahtera",
+        },
+        {
+          itemName: "Telur Ayam",
+          quantity: 90,
+          unit: "Kg",
+          unitPrice: 15000,
+          amount: 1350000,
+          accountNumber: "0987654321",
+          bankName: "BSI",
+          supplierName: "UD Sumber Rezeki",
+        },
+      ],
+      attachments: { productLayouts: [], invoicePhotos: [] },
+      picName: "Nama PIC SPPG",
+      accountantName: "Nama Akuntan",
+      headName: "Nama Kepala SPPG",
+    },
+    true,
+  );
 };
 
 window.generateSppLetter = function (event) {
@@ -3096,24 +4222,40 @@ window.generateSppLetter = function (event) {
     date: document.getElementById("sppLetterDate").value,
     urgency: document.getElementById("sppUrgency").value,
     recipient: document.getElementById("sppRecipient").value.trim(),
-    recipientAddress: document.getElementById("sppRecipientAddress").value.trim(),
+    recipientAddress: document
+      .getElementById("sppRecipientAddress")
+      .value.trim(),
     category: document.getElementById("sppCategory").value.trim(),
     purpose: document.getElementById("sppPurpose").value.trim(),
-    suppliers: [...document.querySelectorAll("#sppSupplierRows tr")].map((row) => ({
-      itemDate: row.querySelector(".spp-item-date").value,
-      itemId: row.querySelector(".spp-item-select").value,
-      itemName: row.querySelector(".spp-item-name").value.trim(),
-      quantity: Number(row.querySelector(".spp-item-quantity").value || 0),
-      unit: row.querySelector(".spp-item-unit").value.trim(),
-      unitPrice: Number(row.querySelector(".spp-item-price").value || 0),
-      amount: Number(row.querySelector(".spp-item-amount").value || 0),
-      accountNumber: row.querySelector(".spp-item-account").value.trim(),
-      bankName: row.querySelector(".spp-item-bank").value.trim(),
-      supplierId: row.querySelector(".spp-item-supplier-select").value,
-      supplierName: row.querySelector(".spp-item-supplier").value.trim(),
-    })).filter((row) => row.itemId || row.itemName || row.amount || row.accountNumber || row.bankName || row.supplierId || row.supplierName),
+    suppliers: [...document.querySelectorAll("#sppSupplierRows tr")]
+      .map((row) => ({
+        itemDate: row.querySelector(".spp-item-date").value,
+        itemId: row.querySelector(".spp-item-select").value,
+        itemName: row.querySelector(".spp-item-name").value.trim(),
+        quantity: Number(row.querySelector(".spp-item-quantity").value || 0),
+        unit: row.querySelector(".spp-item-unit").value.trim(),
+        unitPrice: Number(row.querySelector(".spp-item-price").value || 0),
+        amount: Number(row.querySelector(".spp-item-amount").value || 0),
+        accountNumber: row.querySelector(".spp-item-account").value.trim(),
+        bankName: row.querySelector(".spp-item-bank").value.trim(),
+        supplierId: row.querySelector(".spp-item-supplier-select").value,
+        supplierName: row.querySelector(".spp-item-supplier").value.trim(),
+      }))
+      .filter(
+        (row) =>
+          row.itemId ||
+          row.itemName ||
+          row.amount ||
+          row.accountNumber ||
+          row.bankName ||
+          row.supplierId ||
+          row.supplierName,
+      ),
     attachments: {
-      productLayouts: sppProductPhotoLayouts.map((group) => ({ layout: group.layout, photos: [...group.photos] })),
+      productLayouts: sppProductPhotoLayouts.map((group) => ({
+        layout: group.layout,
+        photos: [...group.photos],
+      })),
       invoicePhotos: [...sppInvoicePhotos],
     },
     picName: String(savedSettings.sppPicName || "").trim(),
@@ -3127,23 +4269,77 @@ window.generateSppLetter = function (event) {
       kitchenPhone: savedSettings.kitchenPhone || "",
     },
   };
-  if (!data.picName || !data.accountantName || !data.headName) return showToast("Isi nama PIC, akuntan, dan kepala SPPG terlebih dahulu di halaman Setting", "error");
-  if (!data.date || !data.suppliers.length) return showToast("Tanggal dan minimal satu rincian pembayaran harus diisi", "error");
-  const invalidRow = data.suppliers.some((row) => !row.itemDate || !row.itemId || !row.itemName || row.quantity <= 0 || row.unitPrice <= 0 || row.amount !== row.quantity * row.unitPrice || !row.supplierId || !row.accountNumber || !row.bankName || !row.supplierName);
-  if (invalidRow) return showToast("Pilih barang sesuai tanggal, isi jumlah pembayaran, dan pilih supplier pada setiap baris", "error");
-  if (!data.suppliers.some((row) => row.amount > 0)) return showToast("Jumlah pembayaran harus lebih dari nol", "error");
-  const incompleteLayout = data.attachments.productLayouts.find((group) => group.photos.length !== group.layout);
-  if (incompleteLayout) return showToast(`Layout foto barang ${incompleteLayout.layout} harus berisi tepat ${incompleteLayout.layout} foto sebelum disimpan`, "error");
-  const allAttachments = [...data.attachments.productLayouts.flatMap((group) => group.photos), ...data.attachments.invoicePhotos];
-  if (allAttachments.reduce((sum, photo) => sum + String(photo.dataUrl || "").length, 0) > 780 * 1024) {
-    return showToast("Total ukuran foto barang dan nota terlalu besar untuk disimpan. Kurangi jumlah atau ukuran fotonya.", "error");
+  if (!data.picName || !data.accountantName || !data.headName)
+    return showToast(
+      "Isi nama PIC, akuntan, dan kepala SPPG terlebih dahulu di halaman Setting",
+      "error",
+    );
+  if (!data.date || !data.suppliers.length)
+    return showToast(
+      "Tanggal dan minimal satu rincian pembayaran harus diisi",
+      "error",
+    );
+  const invalidRow = data.suppliers.some(
+    (row) =>
+      !row.itemDate ||
+      !row.itemId ||
+      !row.itemName ||
+      row.quantity <= 0 ||
+      row.unitPrice <= 0 ||
+      row.amount !== row.quantity * row.unitPrice ||
+      !row.supplierId ||
+      !row.accountNumber ||
+      !row.bankName ||
+      !row.supplierName,
+  );
+  if (invalidRow)
+    return showToast(
+      "Pilih barang sesuai tanggal, isi jumlah pembayaran, dan pilih supplier pada setiap baris",
+      "error",
+    );
+  if (!data.suppliers.some((row) => row.amount > 0))
+    return showToast("Jumlah pembayaran harus lebih dari nol", "error");
+  const incompleteLayout = data.attachments.productLayouts.find(
+    (group) => group.photos.length !== group.layout,
+  );
+  if (incompleteLayout)
+    return showToast(
+      `Layout foto barang ${incompleteLayout.layout} harus berisi tepat ${incompleteLayout.layout} foto sebelum disimpan`,
+      "error",
+    );
+  const allAttachments = [
+    ...data.attachments.productLayouts.flatMap((group) => group.photos),
+    ...data.attachments.invoicePhotos,
+  ];
+  if (
+    allAttachments.reduce(
+      (sum, photo) => sum + String(photo.dataUrl || "").length,
+      0,
+    ) >
+    780 * 1024
+  ) {
+    return showToast(
+      "Total ukuran foto barang dan nota terlalu besar untuk disimpan. Kurangi jumlah atau ukuran fotonya.",
+      "error",
+    );
   }
-  const submitButton = document.querySelector("#sppFormModal form button[type='submit']");
-  setButtonLoading(submitButton, true, sppEditingLetterId ? "Menyimpan perubahan..." : "Menyimpan surat...");
-  const total = data.suppliers.reduce((sum, supplier) => sum + Number(supplier.amount || 0), 0);
+  const submitButton = document.querySelector(
+    "#sppFormModal form button[type='submit']",
+  );
+  setButtonLoading(
+    submitButton,
+    true,
+    sppEditingLetterId ? "Menyimpan perubahan..." : "Menyimpan surat...",
+  );
+  const total = data.suppliers.reduce(
+    (sum, supplier) => sum + Number(supplier.amount || 0),
+    0,
+  );
   const now = new Date().toISOString();
   const existingLetter = sppEditingLetterId
-    ? (window.appState.sppLetters || []).find((letter) => String(letter.id) === sppEditingLetterId)
+    ? (window.appState.sppLetters || []).find(
+        (letter) => String(letter.id) === sppEditingLetterId,
+      )
     : null;
   const letterRef = sppEditingLetterId
     ? doc(db, "payment_letters", sppEditingLetterId)
@@ -3154,13 +4350,23 @@ window.generateSppLetter = function (event) {
     total,
     createdAt: existingLetter?.createdAt || now,
     updatedAt: now,
-    createdByEmail: existingLetter?.createdByEmail || window.appState.user?.email || "",
-    createdByName: existingLetter?.createdByName || window.appState.user?.displayName || window.appState.user?.email || "",
+    createdByEmail:
+      existingLetter?.createdByEmail || window.appState.user?.email || "",
+    createdByName:
+      existingLetter?.createdByName ||
+      window.appState.user?.displayName ||
+      window.appState.user?.email ||
+      "",
   };
   setDoc(letterRef, savedLetter)
     .then(() => {
       savedLetter.id = letterRef.id;
-      const nextLetters = new Map((window.appState.sppLetters || []).map((letter) => [String(letter.id), letter]));
+      const nextLetters = new Map(
+        (window.appState.sppLetters || []).map((letter) => [
+          String(letter.id),
+          letter,
+        ]),
+      );
       nextLetters.set(String(letterRef.id), savedLetter);
       window.appState.sppLetters = [...nextLetters.values()];
       window.appState.sppLettersLoaded = true;
@@ -3168,9 +4374,16 @@ window.generateSppLetter = function (event) {
       sppEditingLetterId = "";
       closeSppForm();
       showSppPreview(savedLetter);
-      showToast(existingLetter ? "Perubahan surat berhasil disimpan" : "Surat berhasil disimpan dan masuk ke tabel riwayat", "success");
+      showToast(
+        existingLetter
+          ? "Perubahan surat berhasil disimpan"
+          : "Surat berhasil disimpan dan masuk ke tabel riwayat",
+        "success",
+      );
     })
-    .catch((error) => showToast(error.message || "Surat gagal disimpan ke Firebase", "error"))
+    .catch((error) =>
+      showToast(error.message || "Surat gagal disimpan ke Firebase", "error"),
+    )
     .finally(() => setButtonLoading(submitButton, false));
 };
 
@@ -3192,8 +4405,12 @@ window.saveStockItem = async function (event) {
   event.preventDefault();
   const name = document.getElementById("stockItemName").value.trim();
   const unit = document.getElementById("stockItemUnit").value.trim();
-  const opening = Number(document.getElementById("stockItemOpening").value || 0);
-  const date = document.getElementById("stockItemOpeningDate").value || getLocalDateString();
+  const opening = Number(
+    document.getElementById("stockItemOpening").value || 0,
+  );
+  const date =
+    document.getElementById("stockItemOpeningDate").value ||
+    getLocalDateString();
   if (!name || !unit || !Number.isFinite(opening) || opening < 0) return;
   const id = getInventoryDocumentId(name, unit);
   const item = {
@@ -3201,16 +4418,40 @@ window.saveStockItem = async function (event) {
     tipe: document.getElementById("stockItemType").value || "Umum",
     satuan: unit,
     datang: opening,
-    minimumStock: Number(document.getElementById("stockItemMinimum").value || 0),
-    stockHistory: opening > 0 ? [{ type: "masuk", quantity: opening, stockBefore: 0, stockAfter: opening, date, note: "Saldo awal", createdAt: new Date().toISOString() }] : [],
+    minimumStock: Number(
+      document.getElementById("stockItemMinimum").value || 0,
+    ),
+    stockHistory:
+      opening > 0
+        ? [
+            {
+              type: "masuk",
+              quantity: opening,
+              stockBefore: 0,
+              stockAfter: opening,
+              date,
+              note: "Saldo awal",
+              createdAt: new Date().toISOString(),
+            },
+          ]
+        : [],
   };
-  if (!Number.isFinite(item.minimumStock) || item.minimumStock < 0) return showToast("Batas minimum harus bernilai nol atau lebih", "error");
+  if (!Number.isFinite(item.minimumStock) || item.minimumStock < 0)
+    return showToast("Batas minimum harus bernilai nol atau lebih", "error");
   const button = event.submitter;
-  if (window.appState.inventoryItems.some((entry) => String(entry.id) === id)) return showToast("Barang dan satuan tersebut sudah ada di daftar stok", "info");
+  if (window.appState.inventoryItems.some((entry) => String(entry.id) === id))
+    return showToast(
+      "Barang dan satuan tersebut sudah ada di daftar stok",
+      "info",
+    );
   setButtonLoading(button, true, "Menyimpan...");
   try {
     const existing = await getDoc(doc(db, "inventory_items", id));
-    if (existing.exists()) return showToast("Barang dan satuan tersebut sudah ada di daftar stok", "info");
+    if (existing.exists())
+      return showToast(
+        "Barang dan satuan tersebut sudah ada di daftar stok",
+        "info",
+      );
     await setDoc(doc(db, "inventory_items", id), item);
     window.appState.inventoryItems.unshift({ id, ...item });
     renderStockTable();
@@ -3226,11 +4467,16 @@ window.saveStockItem = async function (event) {
 };
 
 window.openStockMinimum = function (itemId) {
-  const item = window.appState.inventoryItems.find((entry) => String(entry.id) === String(itemId));
+  const item = window.appState.inventoryItems.find(
+    (entry) => String(entry.id) === String(itemId),
+  );
   if (!item) return;
   document.getElementById("stockMinimumItemId").value = item.id;
-  document.getElementById("stockMinimumItemName").textContent = `${item.nama || item.name || "Barang"} · ${item.satuan || "unit"}`;
-  document.getElementById("stockMinimumValue").value = Number(item.minimumStock || 0);
+  document.getElementById("stockMinimumItemName").textContent =
+    `${item.nama || item.name || "Barang"} · ${item.satuan || "unit"}`;
+  document.getElementById("stockMinimumValue").value = Number(
+    item.minimumStock || 0,
+  );
   const modal = document.getElementById("stockMinimumModal");
   modal?.classList.remove("hidden");
   modal?.classList.add("flex");
@@ -3239,19 +4485,38 @@ window.openStockMinimum = function (itemId) {
 window.saveStockMinimum = async function (event) {
   event.preventDefault();
   const itemId = document.getElementById("stockMinimumItemId").value;
-  const item = window.appState.inventoryItems.find((entry) => String(entry.id) === String(itemId));
-  const minimumStock = Number(document.getElementById("stockMinimumValue").value);
-  if (!item || !Number.isFinite(minimumStock) || minimumStock < 0) return showToast("Isi batas minimum yang valid", "error");
+  const item = window.appState.inventoryItems.find(
+    (entry) => String(entry.id) === String(itemId),
+  );
+  const minimumStock = Number(
+    document.getElementById("stockMinimumValue").value,
+  );
+  if (!item || !Number.isFinite(minimumStock) || minimumStock < 0)
+    return showToast("Isi batas minimum yang valid", "error");
   const button = event.submitter;
   setButtonLoading(button, true, "Menyimpan...");
   try {
-    await setDoc(doc(db, "inventory_items", itemId), { minimumStock }, { merge: true });
-    window.appState.inventoryItems = window.appState.inventoryItems.map((entry) => String(entry.id) === String(itemId) ? { ...entry, minimumStock } : entry);
+    await setDoc(
+      doc(db, "inventory_items", itemId),
+      { minimumStock },
+      { merge: true },
+    );
+    window.appState.inventoryItems = window.appState.inventoryItems.map(
+      (entry) =>
+        String(entry.id) === String(itemId)
+          ? { ...entry, minimumStock }
+          : entry,
+    );
     renderStockTable();
     renderAdminPwaStock();
     renderAdminPwaDashboard();
     closeStockModal("stockMinimumModal");
-    showToast(minimumStock > 0 ? "Batas minimum stok berhasil disimpan" : "Peringatan minimum stok dinonaktifkan", "success");
+    showToast(
+      minimumStock > 0
+        ? "Batas minimum stok berhasil disimpan"
+        : "Peringatan minimum stok dinonaktifkan",
+      "success",
+    );
   } catch (error) {
     showToast(error.message || "Batas minimum stok gagal disimpan", "error");
   } finally {
@@ -3260,14 +4525,18 @@ window.saveStockMinimum = async function (event) {
 };
 
 window.openStockUpdate = function (itemId) {
-  const item = window.appState.inventoryItems.find((entry) => String(entry.id) === String(itemId));
+  const item = window.appState.inventoryItems.find(
+    (entry) => String(entry.id) === String(itemId),
+  );
   if (!item) return;
   document.getElementById("stockUpdateItemId").value = item.id;
-  document.getElementById("stockUpdateItemName").textContent = `${item.nama || item.name || "Barang"} - stok saat ini ${Number(item.datang || 0).toLocaleString("id-ID")} ${item.satuan || ""}`;
+  document.getElementById("stockUpdateItemName").textContent =
+    `${item.nama || item.name || "Barang"} - stok saat ini ${Number(item.datang || 0).toLocaleString("id-ID")} ${item.satuan || ""}`;
   document.getElementById("stockUpdateQuantity").value = "";
   document.getElementById("stockUpdateType").value = "masuk";
   const today = new Date();
-  document.getElementById("stockUpdateDate").value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  document.getElementById("stockUpdateDate").value =
+    `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
   document.getElementById("stockUpdateNote").value = "";
   document.getElementById("stockUpdateModal").classList.remove("hidden");
 };
@@ -3280,41 +4549,75 @@ window.downloadStockReport = function () {
   }
   const summaryByItem = new Map();
   for (const item of window.appState.inventoryItems) {
-    const dayEntries = (Array.isArray(item.stockHistory) ? item.stockHistory : [])
+    const dayEntries = (
+      Array.isArray(item.stockHistory) ? item.stockHistory : []
+    )
       .filter((entry) => String(entry.date || "") === reportDate)
-      .sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+      .sort((a, b) =>
+        String(a.createdAt || "").localeCompare(String(b.createdAt || "")),
+      );
     if (!dayEntries.length) continue;
     const first = dayEntries[0];
     const last = dayEntries[dayEntries.length - 1];
     const unit = String(item.satuan || "").trim();
     const name = String(item.nama || item.name || "Barang").trim();
     const key = `${name.toLocaleLowerCase("id-ID")}::${unit.toLocaleLowerCase("id-ID")}`;
-    const opening = first.stockBefore != null
-      ? Number(first.stockBefore)
-      : first.type === "masuk"
-        ? Number(first.stockAfter || 0) - Number(first.quantity || 0)
-        : first.type === "keluar"
-          ? Number(first.stockAfter || 0) + Number(first.quantity || 0)
-          : Number(first.stockAfter || first.physicalStock || 0) - Number(first.difference || 0);
-    const summary = summaryByItem.get(key) || { name, unit, opening: 0, incoming: 0, outgoing: 0, adjustment: 0, remaining: 0 };
+    const opening =
+      first.stockBefore != null
+        ? Number(first.stockBefore)
+        : first.type === "masuk"
+          ? Number(first.stockAfter || 0) - Number(first.quantity || 0)
+          : first.type === "keluar"
+            ? Number(first.stockAfter || 0) + Number(first.quantity || 0)
+            : Number(first.stockAfter || first.physicalStock || 0) -
+              Number(first.difference || 0);
+    const summary = summaryByItem.get(key) || {
+      name,
+      unit,
+      opening: 0,
+      incoming: 0,
+      outgoing: 0,
+      adjustment: 0,
+      remaining: 0,
+    };
     summary.opening += opening;
-    summary.incoming += dayEntries.reduce((sum, entry) => sum + (entry.type === "masuk" ? Number(entry.quantity || 0) : 0), 0);
-    summary.outgoing += dayEntries.reduce((sum, entry) => sum + (entry.type === "keluar" ? Number(entry.quantity || 0) : 0), 0);
-    summary.adjustment += dayEntries.reduce((sum, entry) => sum + (entry.type === "opname" ? Number(entry.difference || 0) : 0), 0);
+    summary.incoming += dayEntries.reduce(
+      (sum, entry) =>
+        sum + (entry.type === "masuk" ? Number(entry.quantity || 0) : 0),
+      0,
+    );
+    summary.outgoing += dayEntries.reduce(
+      (sum, entry) =>
+        sum + (entry.type === "keluar" ? Number(entry.quantity || 0) : 0),
+      0,
+    );
+    summary.adjustment += dayEntries.reduce(
+      (sum, entry) =>
+        sum + (entry.type === "opname" ? Number(entry.difference || 0) : 0),
+      0,
+    );
     const ending = last.stockAfter ?? last.physicalStock;
-    summary.remaining += ending == null ? opening + summary.incoming - summary.outgoing + summary.adjustment : Number(ending);
+    summary.remaining +=
+      ending == null
+        ? opening + summary.incoming - summary.outgoing + summary.adjustment
+        : Number(ending);
     summaryByItem.set(key, summary);
   }
-  const summaries = [...summaryByItem.values()].sort((a, b) => a.name.localeCompare(b.name, "id"));
+  const summaries = [...summaryByItem.values()].sort((a, b) =>
+    a.name.localeCompare(b.name, "id"),
+  );
   if (!summaries.length) {
     showToast("Tidak ada transaksi stok pada tanggal tersebut", "info");
     return;
   }
   const date = new Date(`${reportDate}T00:00:00`);
-  const dateLabel = Number.isNaN(date.getTime()) ? reportDate : date.toLocaleDateString("id-ID", { dateStyle: "long" });
+  const dateLabel = Number.isNaN(date.getTime())
+    ? reportDate
+    : date.toLocaleDateString("id-ID", { dateStyle: "long" });
   const formatQty = (value) => Number(value || 0).toLocaleString("id-ID");
-  const tableRows = summaries.map((summary, index) =>
-    `<tr><td class="center">${index + 1}</td><td>${escapeHtml(summary.name)}</td><td class="number">${formatQty(summary.opening)}</td><td class="number">${formatQty(summary.incoming)}</td><td class="number">${formatQty(summary.outgoing)}</td><td class="number">${summary.adjustment > 0 ? "+" : ""}${formatQty(summary.adjustment)}</td><td>${escapeHtml(summary.unit)}</td><td class="number"><strong>${formatQty(summary.remaining)}</strong></td></tr>`,
+  const tableRows = summaries.map(
+    (summary, index) =>
+      `<tr><td class="center">${index + 1}</td><td>${escapeHtml(summary.name)}</td><td class="number">${formatQty(summary.opening)}</td><td class="number">${formatQty(summary.incoming)}</td><td class="number">${formatQty(summary.outgoing)}</td><td class="number">${summary.adjustment > 0 ? "+" : ""}${formatQty(summary.adjustment)}</td><td>${escapeHtml(summary.unit)}</td><td class="number"><strong>${formatQty(summary.remaining)}</strong></td></tr>`,
   );
   const reportHtml = `<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Laporan Stok ${escapeHtml(reportDate)}</title><style>@page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font:10px Arial,sans-serif;color:#111}h1{font-size:16px;text-align:center;margin:0 0 5px}.date{text-align:center;margin:0 0 16px;font-size:11px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #222;padding:7px 6px;vertical-align:top}th{background:#d9edf7;text-align:center;font-weight:bold}.number{text-align:right;white-space:nowrap}.center{text-align:center}tr{break-inside:avoid}@media print{thead{display:table-header-group}}</style></head><body><h1>LAPORAN STOK BARANG</h1><p class="date">Tanggal: ${escapeHtml(dateLabel)}</p><table><thead><tr><th>No.</th><th>Nama Barang</th><th>Barang Awal</th><th>Barang Masuk</th><th>Barang Keluar</th><th>Penyesuaian Opname</th><th>Satuan</th><th>Sisa</th></tr></thead><tbody>${tableRows.join("")}</tbody></table><script>window.addEventListener('load',()=>setTimeout(()=>window.print(),200));</script></body></html>`;
   const reportWindow = window.open("", "_blank");
@@ -3329,33 +4632,55 @@ window.downloadStockReport = function () {
 };
 
 window.openStocktakeReport = function () {
-  const records = window.appState.inventoryItems.flatMap((item) =>
-    (Array.isArray(item.stockHistory) ? item.stockHistory : [])
-      .filter((entry) => entry.type === "opname")
-      .map((entry) => ({ item, entry })),
-  ).sort((a, b) => String(b.entry.createdAt || b.entry.date || "").localeCompare(String(a.entry.createdAt || a.entry.date || "")));
+  const records = window.appState.inventoryItems
+    .flatMap((item) =>
+      (Array.isArray(item.stockHistory) ? item.stockHistory : [])
+        .filter((entry) => entry.type === "opname")
+        .map((entry) => ({ item, entry })),
+    )
+    .sort((a, b) =>
+      String(b.entry.createdAt || b.entry.date || "").localeCompare(
+        String(a.entry.createdAt || a.entry.date || ""),
+      ),
+    );
   const list = document.getElementById("stocktakeReportList");
   if (!list) return;
-  list.innerHTML = records.length ? records.map(({ item, entry }) => {
-    const date = entry.date ? new Date(`${entry.date}T00:00:00`) : null;
-    const dateText = date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString("id-ID", { dateStyle: "medium" }) : "Tanggal tidak tersedia";
-    const diff = Number(entry.difference || 0);
-    const diffText = `${diff > 0 ? "+" : ""}${diff.toLocaleString("id-ID")} ${item.satuan || ""}`;
-    const diffClass = diff < 0 ? "text-rose-700" : diff > 0 ? "text-emerald-700" : "text-slate-600";
-    return `<article class="rounded-xl border border-slate-200 p-4"><div class="flex flex-wrap items-start justify-between gap-2"><div><h4 class="text-sm font-bold text-slate-800">${escapeHtml(item.nama || item.name || "Barang")}</h4><p class="mt-1 text-[11px] text-slate-500">${escapeHtml(dateText)}${entry.recordedBy ? ` Â· ${escapeHtml(entry.recordedBy)}` : ""}</p></div><strong class="text-sm ${diffClass}">${escapeHtml(diffText)}</strong></div><div class="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-3 text-[11px]"><p class="text-slate-500">Sistem<strong class="mt-1 block text-slate-700">${Number(entry.stockBefore ?? 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</strong></p><p class="text-slate-500">Fisik<strong class="mt-1 block text-slate-700">${Number(entry.physicalStock ?? entry.stockAfter ?? 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</strong></p></div><p class="mt-2 text-xs text-slate-600"><strong>Catatan:</strong> ${escapeHtml(entry.note || "Tidak ada selisih")}</p></article>`;
-  }).join("") : '<div class="rounded-xl bg-slate-50 p-8 text-center text-sm text-slate-400">Belum ada catatan stok opname.</div>';
+  list.innerHTML = records.length
+    ? records
+        .map(({ item, entry }) => {
+          const date = entry.date ? new Date(`${entry.date}T00:00:00`) : null;
+          const dateText =
+            date && !Number.isNaN(date.getTime())
+              ? date.toLocaleDateString("id-ID", { dateStyle: "medium" })
+              : "Tanggal tidak tersedia";
+          const diff = Number(entry.difference || 0);
+          const diffText = `${diff > 0 ? "+" : ""}${diff.toLocaleString("id-ID")} ${item.satuan || ""}`;
+          const diffClass =
+            diff < 0
+              ? "text-rose-700"
+              : diff > 0
+                ? "text-emerald-700"
+                : "text-slate-600";
+          return `<article class="rounded-xl border border-slate-200 p-4"><div class="flex flex-wrap items-start justify-between gap-2"><div><h4 class="text-sm font-bold text-slate-800">${escapeHtml(item.nama || item.name || "Barang")}</h4><p class="mt-1 text-[11px] text-slate-500">${escapeHtml(dateText)}${entry.recordedBy ? ` Â· ${escapeHtml(entry.recordedBy)}` : ""}</p></div><strong class="text-sm ${diffClass}">${escapeHtml(diffText)}</strong></div><div class="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-3 text-[11px]"><p class="text-slate-500">Sistem<strong class="mt-1 block text-slate-700">${Number(entry.stockBefore ?? 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</strong></p><p class="text-slate-500">Fisik<strong class="mt-1 block text-slate-700">${Number(entry.physicalStock ?? entry.stockAfter ?? 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</strong></p></div><p class="mt-2 text-xs text-slate-600"><strong>Catatan:</strong> ${escapeHtml(entry.note || "Tidak ada selisih")}</p></article>`;
+        })
+        .join("")
+    : '<div class="rounded-xl bg-slate-50 p-8 text-center text-sm text-slate-400">Belum ada catatan stok opname.</div>';
   const modal = document.getElementById("stocktakeReportModal");
   modal?.classList.remove("hidden");
   modal?.classList.add("flex");
 };
 
 window.openStocktake = function (itemId) {
-  const item = window.appState.inventoryItems.find((entry) => String(entry.id) === String(itemId));
+  const item = window.appState.inventoryItems.find(
+    (entry) => String(entry.id) === String(itemId),
+  );
   if (!item) return;
   const balance = Number(item.datang || 0);
   document.getElementById("stocktakeItemId").value = item.id;
-  document.getElementById("stocktakeItemName").textContent = `${item.nama || item.name || "Barang"} Â· satuan ${item.satuan || "unit"}`;
-  document.getElementById("stocktakeSystemBalance").value = `${balance.toLocaleString("id-ID")} ${item.satuan || ""}`;
+  document.getElementById("stocktakeItemName").textContent =
+    `${item.nama || item.name || "Barang"} Â· satuan ${item.satuan || "unit"}`;
+  document.getElementById("stocktakeSystemBalance").value =
+    `${balance.toLocaleString("id-ID")} ${item.satuan || ""}`;
   document.getElementById("stocktakePhysicalBalance").value = balance;
   document.getElementById("stocktakeDate").value = getLocalDateString();
   document.getElementById("stocktakeNote").value = "";
@@ -3366,8 +4691,16 @@ window.openStocktake = function (itemId) {
 };
 
 window.updateStocktakeDifference = function () {
-  const system = Number(window.appState.inventoryItems.find((item) => String(item.id) === String(document.getElementById("stocktakeItemId")?.value))?.datang || 0);
-  const physical = Number(document.getElementById("stocktakePhysicalBalance")?.value || 0);
+  const system = Number(
+    window.appState.inventoryItems.find(
+      (item) =>
+        String(item.id) ===
+        String(document.getElementById("stocktakeItemId")?.value),
+    )?.datang || 0,
+  );
+  const physical = Number(
+    document.getElementById("stocktakePhysicalBalance")?.value || 0,
+  );
   const difference = physical - system;
   const output = document.getElementById("stocktakeDifference");
   const card = document.getElementById("stocktakeDifferenceCard");
@@ -3376,17 +4709,26 @@ window.updateStocktakeDifference = function () {
     output.textContent = `${sign}${difference.toLocaleString("id-ID")} (fisik âˆ’ sistem)`;
     output.className = `mt-1 text-sm font-extrabold ${difference < 0 ? "text-rose-700" : difference > 0 ? "text-emerald-700" : "text-slate-700"}`;
   }
-  if (card) card.className = `rounded-xl p-3 ${difference === 0 ? "bg-slate-50" : "bg-amber-50"}`;
+  if (card)
+    card.className = `rounded-xl p-3 ${difference === 0 ? "bg-slate-50" : "bg-amber-50"}`;
   const hint = document.getElementById("stocktakeNoteHint");
-  if (hint) hint.textContent = difference === 0 ? "Tidak ada selisih. Catatan bersifat opsional." : "Catatan wajib diisi untuk menjelaskan selisih stok.";
+  if (hint)
+    hint.textContent =
+      difference === 0
+        ? "Tidak ada selisih. Catatan bersifat opsional."
+        : "Catatan wajib diisi untuk menjelaskan selisih stok.";
   return difference;
 };
 
 window.submitStocktake = async function (event) {
   event.preventDefault();
   const itemId = document.getElementById("stocktakeItemId").value;
-  const item = window.appState.inventoryItems.find((entry) => String(entry.id) === String(itemId));
-  const physical = Number(document.getElementById("stocktakePhysicalBalance").value);
+  const item = window.appState.inventoryItems.find(
+    (entry) => String(entry.id) === String(itemId),
+  );
+  const physical = Number(
+    document.getElementById("stocktakePhysicalBalance").value,
+  );
   const date = document.getElementById("stocktakeDate").value;
   const note = document.getElementById("stocktakeNote").value.trim();
   if (!item || !Number.isFinite(physical) || physical < 0 || !date) return;
@@ -3411,7 +4753,8 @@ window.submitStocktake = async function (event) {
         note,
         stockBefore: system,
         stockAfter: physical,
-        recordedBy: window.appState.user?.email || window.appState.user?.uid || "",
+        recordedBy:
+          window.appState.user?.email || window.appState.user?.uid || "",
         createdAt: new Date().toISOString(),
       },
     ],
@@ -3420,15 +4763,25 @@ window.submitStocktake = async function (event) {
   setButtonLoading(button, true, "Menyimpan...");
   try {
     await setDoc(doc(db, "inventory_items", String(itemId)), updatedItem);
-    window.appState.inventoryItems = window.appState.inventoryItems.map((entry) => String(entry.id) === String(itemId) ? updatedItem : entry);
+    window.appState.inventoryItems = window.appState.inventoryItems.map(
+      (entry) => (String(entry.id) === String(itemId) ? updatedItem : entry),
+    );
     renderStockTable();
     renderAdminPwaStock();
     renderAdminPwaDashboard();
     updateDashboardMetrics();
     closeStockModal("stocktakeModal");
-    showToast(difference === 0 ? "Stok opname tersimpan, tidak ada selisih" : `Stok opname tersimpan Â· selisih ${difference > 0 ? "+" : ""}${difference.toLocaleString("id-ID")} ${item.satuan || ""}`, "success");
+    showToast(
+      difference === 0
+        ? "Stok opname tersimpan, tidak ada selisih"
+        : `Stok opname tersimpan Â· selisih ${difference > 0 ? "+" : ""}${difference.toLocaleString("id-ID")} ${item.satuan || ""}`,
+      "success",
+    );
   } catch (error) {
-    showToast(error.message || "Stok opname gagal disimpan ke Firestore", "error");
+    showToast(
+      error.message || "Stok opname gagal disimpan ke Firestore",
+      "error",
+    );
   } finally {
     setButtonLoading(button, false);
   }
@@ -3437,13 +4790,18 @@ window.submitStocktake = async function (event) {
 window.submitStockUpdate = async function (event) {
   event.preventDefault();
   const itemId = document.getElementById("stockUpdateItemId").value;
-  const item = window.appState.inventoryItems.find((entry) => String(entry.id) === String(itemId));
+  const item = window.appState.inventoryItems.find(
+    (entry) => String(entry.id) === String(itemId),
+  );
   const quantity = Number(document.getElementById("stockUpdateQuantity").value);
   if (!item || !Number.isFinite(quantity) || quantity <= 0) return;
   const type = document.getElementById("stockUpdateType").value;
   const currentStock = Number(item.datang || 0);
   if (type === "keluar" && quantity > currentStock) {
-    showToast(`Stok tidak cukup. Saldo saat ini ${currentStock.toLocaleString("id-ID")} ${item.satuan || ""}.`, "error");
+    showToast(
+      `Stok tidak cukup. Saldo saat ini ${currentStock.toLocaleString("id-ID")} ${item.satuan || ""}.`,
+      "error",
+    );
     return;
   }
   const date = document.getElementById("stockUpdateDate").value;
@@ -3469,23 +4827,31 @@ window.submitStockUpdate = async function (event) {
       },
     ],
   };
-  const saveButton = document.getElementById("adminPwaStockSaveButton") || event.submitter;
+  const saveButton =
+    document.getElementById("adminPwaStockSaveButton") || event.submitter;
   setButtonLoading(saveButton, true, "Menyimpan...");
   try {
     await setDoc(doc(db, "inventory_items", String(itemId)), updatedItem);
-    window.appState.inventoryItems = window.appState.inventoryItems.map((entry) => String(entry.id) === String(itemId) ? updatedItem : entry);
+    window.appState.inventoryItems = window.appState.inventoryItems.map(
+      (entry) => (String(entry.id) === String(itemId) ? updatedItem : entry),
+    );
     renderStockTable();
     renderAdminPwaStock();
     renderAdminPwaDashboard();
     updateDashboardMetrics();
     showToast(`Transaksi barang ${type} berhasil disimpan`, "success");
   } catch (error) {
-    const index = window.appState.inventoryItems.findIndex((entry) => String(entry.id) === String(itemId));
+    const index = window.appState.inventoryItems.findIndex(
+      (entry) => String(entry.id) === String(itemId),
+    );
     if (index >= 0) window.appState.inventoryItems[index] = updatedItem;
     renderStockTable();
     renderAdminPwaStock();
     renderAdminPwaDashboard();
-    showToast("Stok diperbarui di perangkat ini; gagal tersimpan ke server", "error");
+    showToast(
+      "Stok diperbarui di perangkat ini; gagal tersimpan ke server",
+      "error",
+    );
   } finally {
     setButtonLoading(saveButton, false);
   }
@@ -3493,32 +4859,60 @@ window.submitStockUpdate = async function (event) {
 };
 
 window.openStockHistory = function (itemId) {
-  const item = window.appState.inventoryItems.find((entry) => String(entry.id) === String(itemId));
+  const item = window.appState.inventoryItems.find(
+    (entry) => String(entry.id) === String(itemId),
+  );
   if (!item) return;
-  document.getElementById("stockHistoryItemName").textContent = item.nama || item.name || "Barang";
+  document.getElementById("stockHistoryItemName").textContent =
+    item.nama || item.name || "Barang";
   const historyList = document.getElementById("stockHistoryList");
-  const history = Array.isArray(item.stockHistory) ? [...item.stockHistory] : [];
-  history.sort((a, b) => String(b.createdAt || b.date).localeCompare(String(a.createdAt || a.date)));
+  const history = Array.isArray(item.stockHistory)
+    ? [...item.stockHistory]
+    : [];
+  history.sort((a, b) =>
+    String(b.createdAt || b.date).localeCompare(String(a.createdAt || a.date)),
+  );
   historyList.innerHTML = history.length
-    ? history.map((entry) => {
-        const date = entry.date ? new Date(`${entry.date}T00:00:00`) : null;
-        const displayDate = date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString("id-ID", { dateStyle: "medium" }) : "Tanggal tidak tersedia";
-        const isStocktake = entry.type === "opname";
-        const type = entry.type === "keluar" ? "keluar" : "masuk";
-        const sign = type === "masuk" ? "+" : "-";
-        const amountColor = isStocktake ? (Number(entry.difference || 0) < 0 ? "text-rose-700" : Number(entry.difference || 0) > 0 ? "text-emerald-700" : "text-slate-600") : type === "masuk" ? "text-emerald-700" : "text-rose-700";
-        const typeLabel = isStocktake ? "Stok Opname" : type === "masuk" ? "Barang Masuk" : "Barang Keluar";
-        const recordedAt = entry.createdAt ? new Date(entry.createdAt) : null;
-        const recordedText = recordedAt && !Number.isNaN(recordedAt.getTime())
-          ? recordedAt.toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })
-          : "Waktu pencatatan tidak tersedia";
-        if (isStocktake) {
-          const delta = Number(entry.difference || 0);
-          const deltaText = `${delta > 0 ? "+" : ""}${delta.toLocaleString("id-ID")} ${item.satuan || ""}`;
-          return `<article class="rounded-xl border border-indigo-100 bg-white p-4 shadow-sm"><div class="flex flex-wrap items-start justify-between gap-3"><div><span class="block text-xs font-semibold text-slate-700">Tanggal opname: ${escapeHtml(displayDate)}</span><span class="mt-1 block text-[10px] text-slate-400">Dicatat: ${escapeHtml(recordedText)}${entry.recordedBy ? ` Â· ${escapeHtml(entry.recordedBy)}` : ""}</span><span class="mt-2 inline-block text-[10px] font-bold uppercase text-indigo-700">Stok Opname</span></div><strong class="text-sm ${amountColor}">Selisih ${escapeHtml(deltaText)}</strong></div><div class="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-3 text-[11px]"><p class="text-slate-500">Saldo sistem <strong class="block text-slate-700">${Number(entry.stockBefore ?? 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</strong></p><p class="text-slate-500">Hasil fisik <strong class="block text-slate-700">${Number(entry.physicalStock ?? entry.stockAfter ?? 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</strong></p></div>${entry.note ? `<p class="mt-3 text-xs text-slate-500"><span class="font-semibold">Catatan:</span> ${escapeHtml(entry.note)}</p>` : ""}</article>`;
-        }
-        return `<article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div class="flex flex-wrap items-start justify-between gap-3"><div><span class="block text-xs font-semibold text-slate-700">Tanggal transaksi: ${escapeHtml(displayDate)}</span><span class="block text-[10px] text-slate-400 mt-1">Dicatat: ${escapeHtml(recordedText)}</span><span class="inline-block mt-2 text-[10px] font-bold uppercase ${amountColor}">${typeLabel}</span></div><strong class="text-sm ${amountColor}">${sign}${Number(entry.quantity || 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</strong></div>${entry.note ? `<p class="text-xs text-slate-500 mt-3"><span class="font-semibold">Catatan:</span> ${escapeHtml(entry.note)}</p>` : ""}</article>`;
-      }).join("")
+    ? history
+        .map((entry) => {
+          const date = entry.date ? new Date(`${entry.date}T00:00:00`) : null;
+          const displayDate =
+            date && !Number.isNaN(date.getTime())
+              ? date.toLocaleDateString("id-ID", { dateStyle: "medium" })
+              : "Tanggal tidak tersedia";
+          const isStocktake = entry.type === "opname";
+          const type = entry.type === "keluar" ? "keluar" : "masuk";
+          const sign = type === "masuk" ? "+" : "-";
+          const amountColor = isStocktake
+            ? Number(entry.difference || 0) < 0
+              ? "text-rose-700"
+              : Number(entry.difference || 0) > 0
+                ? "text-emerald-700"
+                : "text-slate-600"
+            : type === "masuk"
+              ? "text-emerald-700"
+              : "text-rose-700";
+          const typeLabel = isStocktake
+            ? "Stok Opname"
+            : type === "masuk"
+              ? "Barang Masuk"
+              : "Barang Keluar";
+          const recordedAt = entry.createdAt ? new Date(entry.createdAt) : null;
+          const recordedText =
+            recordedAt && !Number.isNaN(recordedAt.getTime())
+              ? recordedAt.toLocaleString("id-ID", {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })
+              : "Waktu pencatatan tidak tersedia";
+          if (isStocktake) {
+            const delta = Number(entry.difference || 0);
+            const deltaText = `${delta > 0 ? "+" : ""}${delta.toLocaleString("id-ID")} ${item.satuan || ""}`;
+            return `<article class="rounded-xl border border-indigo-100 bg-white p-4 shadow-sm"><div class="flex flex-wrap items-start justify-between gap-3"><div><span class="block text-xs font-semibold text-slate-700">Tanggal opname: ${escapeHtml(displayDate)}</span><span class="mt-1 block text-[10px] text-slate-400">Dicatat: ${escapeHtml(recordedText)}${entry.recordedBy ? ` Â· ${escapeHtml(entry.recordedBy)}` : ""}</span><span class="mt-2 inline-block text-[10px] font-bold uppercase text-indigo-700">Stok Opname</span></div><strong class="text-sm ${amountColor}">Selisih ${escapeHtml(deltaText)}</strong></div><div class="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-3 text-[11px]"><p class="text-slate-500">Saldo sistem <strong class="block text-slate-700">${Number(entry.stockBefore ?? 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</strong></p><p class="text-slate-500">Hasil fisik <strong class="block text-slate-700">${Number(entry.physicalStock ?? entry.stockAfter ?? 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</strong></p></div>${entry.note ? `<p class="mt-3 text-xs text-slate-500"><span class="font-semibold">Catatan:</span> ${escapeHtml(entry.note)}</p>` : ""}</article>`;
+          }
+          return `<article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div class="flex flex-wrap items-start justify-between gap-3"><div><span class="block text-xs font-semibold text-slate-700">Tanggal transaksi: ${escapeHtml(displayDate)}</span><span class="block text-[10px] text-slate-400 mt-1">Dicatat: ${escapeHtml(recordedText)}</span><span class="inline-block mt-2 text-[10px] font-bold uppercase ${amountColor}">${typeLabel}</span></div><strong class="text-sm ${amountColor}">${sign}${Number(entry.quantity || 0).toLocaleString("id-ID")} ${escapeHtml(item.satuan || "")}</strong></div>${entry.note ? `<p class="text-xs text-slate-500 mt-3"><span class="font-semibold">Catatan:</span> ${escapeHtml(entry.note)}</p>` : ""}</article>`;
+        })
+        .join("")
     : `<p class="py-8 text-center text-sm text-slate-400">Belum ada riwayat perubahan stok.</p>`;
   document.getElementById("stockHistoryModal").classList.remove("hidden");
   document.getElementById("stockHistoryModal").classList.add("flex");
@@ -3527,30 +4921,71 @@ window.openStockHistory = function (itemId) {
 window.filterBarangTable = renderBarangTable;
 
 window.exportBarangReport = function () {
-  const searchTerm = (document.getElementById("searchBarang")?.value || "").trim().toLocaleLowerCase("id-ID");
-  const filterTipe = document.getElementById("filterTipeBarang")?.value || "ALL";
-  const dateFrom = document.getElementById("filterTanggalMulaiBarang")?.value || "";
-  const dateTo = document.getElementById("filterTanggalAkhirBarang")?.value || "";
-  const filtered = window.appState.barang.filter((item) => {
+  const searchTerm = (document.getElementById("searchBarang")?.value || "")
+    .trim()
+    .toLocaleLowerCase("id-ID");
+  const filterTipe =
+    document.getElementById("filterTipeBarang")?.value || "ALL";
+  const dateFrom =
+    document.getElementById("filterTanggalMulaiBarang")?.value || "";
+  const dateTo =
+    document.getElementById("filterTanggalAkhirBarang")?.value || "";
+  const filtered = getCurrentBarangItems().filter((item) => {
     const name = (item.nama || item.name || "").toLocaleLowerCase("id-ID");
     const date = String(item.tanggal || "");
-    return name.includes(searchTerm) && (filterTipe === "ALL" || item.tipe === filterTipe) && (!dateFrom || date >= dateFrom) && (!dateTo || date <= dateTo);
+    return (
+      name.includes(searchTerm) &&
+      (filterTipe === "ALL" || item.tipe === filterTipe) &&
+      (!dateFrom || date >= dateFrom) &&
+      (!dateTo || date <= dateTo)
+    );
   });
-  if (!filtered.length) return showToast("Tidak ada data untuk diekspor", "error");
-  const columns = ["ID", "Nama Barang", "Tanggal", "Tipe", "Harga", "Satuan", "Kebutuhan", "Datang", "Status Admin", "Status Super Admin"];
+  if (!filtered.length)
+    return showToast("Tidak ada data untuk diekspor", "error");
+  const columns = [
+    "ID",
+    "Nama Barang",
+    "Tanggal",
+    "Tipe",
+    "Harga",
+    "Satuan",
+    "Kebutuhan",
+    "Datang",
+    "Status Admin",
+    "Status Super Admin",
+  ];
   const escapeCell = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
-  const rows = filtered.map((item) => [item.id, item.nama || item.name, item.tanggal, item.tipe, item.harga, item.satuan, item.kebutuhan, getItemReceivedQuantity(item), item.statusAdmin || "Pending", item.statusSuperAdmin || "Pending"]);
-  const csv = "\uFEFF" + [columns, ...rows].map((row) => row.map(escapeCell).join(",")).join("\r\n");
-  const blobUrl = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const rows = filtered.map((item) => [
+    item.id,
+    item.nama || item.name,
+    item.tanggal,
+    item.tipe,
+    item.harga,
+    item.satuan,
+    item.kebutuhan,
+    getItemReceivedQuantity(item),
+    item.statusAdmin || "Pending",
+    item.statusSuperAdmin || "Pending",
+  ]);
+  const csv =
+    "\uFEFF" +
+    [columns, ...rows].map((row) => row.map(escapeCell).join(",")).join("\r\n");
+  const blobUrl = URL.createObjectURL(
+    new Blob([csv], { type: "text/csv;charset=utf-8" }),
+  );
   const link = document.createElement("a");
   link.href = blobUrl;
-  link.download = `laporan-barang-${getLocalDateString()}.csv`;
+  link.download = `laporan-${isOperationalPage() ? "barang-operasional" : "barang"}-${getLocalDateString()}.csv`;
   link.click();
   URL.revokeObjectURL(blobUrl);
-  showToast(`${filtered.length} data barang berhasil diekspor`, "success");
+  showToast(
+    `${filtered.length} data ${isOperationalPage() ? "barang operasional" : "barang"} berhasil diekspor`,
+    "success",
+  );
 };
 
 window.openRabModal = function () {
+  if (isOperationalPage()) return;
   const today = getLocalDateString();
   const date = new Date();
   document.getElementById("rabDate").value = today;
@@ -3571,34 +5006,66 @@ window.openRabModal = function () {
 window.renderRabPMChoices = function () {
   const container = document.getElementById("rabPMChoices");
   if (!container) return;
-  const activePMs = window.appState.pms.filter((pm) => (pm.status || "Aktif") === "Aktif");
+  const activePMs = window.appState.pms.filter(
+    (pm) => (pm.status || "Aktif") === "Aktif",
+  );
   const selectedIds = window.appState.rabSelectedPMIds;
-  const query = (document.getElementById("rabPMSearch")?.value || "").trim().toLocaleLowerCase("id-ID");
-  const shownPMs = activePMs.filter((pm) => `${pm.nama || ""} ${pm.jenis || ""} ${pm.lokasi || ""}`.toLocaleLowerCase("id-ID").includes(query));
-  container.innerHTML = shownPMs.length ? shownPMs.map((pm) => {
-    const id = escapeHtml(pm.id);
-    const isChecked = selectedIds === null || selectedIds.has(String(pm.id));
-    return `<label class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-white"><input type="checkbox" value="${id}" ${isChecked ? "checked" : ""} onchange="toggleRabPMSelection(this.value,this.checked)" class="h-4 w-4 rounded border-slate-300 text-violet-600"><span class="min-w-0 flex-1"><strong class="block truncate text-slate-700">${escapeHtml(pm.nama || "PM tanpa nama")}</strong><small class="text-slate-500">${escapeHtml(pm.jenis || "PM")} Â· ${getPMTotal(pm).toLocaleString("id-ID")} porsi</small></span></label>`;
-  }).join("") : `<p class="p-3 text-xs text-slate-400">${activePMs.length ? "Tidak ada PM yang cocok." : "Belum ada PM aktif."}</p>`;
-  const selectedCount = selectedIds === null ? activePMs.length : activePMs.filter((pm) => selectedIds.has(String(pm.id))).length;
+  const query = (document.getElementById("rabPMSearch")?.value || "")
+    .trim()
+    .toLocaleLowerCase("id-ID");
+  const shownPMs = activePMs.filter((pm) =>
+    `${pm.nama || ""} ${pm.jenis || ""} ${pm.lokasi || ""}`
+      .toLocaleLowerCase("id-ID")
+      .includes(query),
+  );
+  container.innerHTML = shownPMs.length
+    ? shownPMs
+        .map((pm) => {
+          const id = escapeHtml(pm.id);
+          const isChecked =
+            selectedIds === null || selectedIds.has(String(pm.id));
+          return `<label class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-white"><input type="checkbox" value="${id}" ${isChecked ? "checked" : ""} onchange="toggleRabPMSelection(this.value,this.checked)" class="h-4 w-4 rounded border-slate-300 text-violet-600"><span class="min-w-0 flex-1"><strong class="block truncate text-slate-700">${escapeHtml(pm.nama || "PM tanpa nama")}</strong><small class="text-slate-500">${escapeHtml(pm.jenis || "PM")} Â· ${getPMTotal(pm).toLocaleString("id-ID")} porsi</small></span></label>`;
+        })
+        .join("")
+    : `<p class="p-3 text-xs text-slate-400">${activePMs.length ? "Tidak ada PM yang cocok." : "Belum ada PM aktif."}</p>`;
+  const selectedCount =
+    selectedIds === null
+      ? activePMs.length
+      : activePMs.filter((pm) => selectedIds.has(String(pm.id))).length;
   const countLabel = document.getElementById("rabPMSelectionCount");
-  if (countLabel) countLabel.textContent = `${selectedCount} dari ${activePMs.length} PM aktif dipilih`;
-  const selectAll = document.querySelector('#modalRab button[onclick="toggleAllRabPMs()"]');
-  if (selectAll) selectAll.textContent = selectedCount === activePMs.length ? "Batal pilih semua" : "Pilih semua";
+  if (countLabel)
+    countLabel.textContent = `${selectedCount} dari ${activePMs.length} PM aktif dipilih`;
+  const selectAll = document.querySelector(
+    '#modalRab button[onclick="toggleAllRabPMs()"]',
+  );
+  if (selectAll)
+    selectAll.textContent =
+      selectedCount === activePMs.length ? "Batal pilih semua" : "Pilih semua";
 };
 
 window.toggleRabPMSelection = function (pmId, checked) {
-  const allIds = window.appState.pms.filter((pm) => (pm.status || "Aktif") === "Aktif").map((pm) => String(pm.id));
-  if (window.appState.rabSelectedPMIds === null) window.appState.rabSelectedPMIds = new Set(allIds);
+  const allIds = window.appState.pms
+    .filter((pm) => (pm.status || "Aktif") === "Aktif")
+    .map((pm) => String(pm.id));
+  if (window.appState.rabSelectedPMIds === null)
+    window.appState.rabSelectedPMIds = new Set(allIds);
   if (checked) window.appState.rabSelectedPMIds.add(String(pmId));
   else window.appState.rabSelectedPMIds.delete(String(pmId));
   renderRabPMChoices();
 };
 
 window.toggleAllRabPMs = function () {
-  const activeIds = window.appState.pms.filter((pm) => (pm.status || "Aktif") === "Aktif").map((pm) => String(pm.id));
-  const currentlySelected = window.appState.rabSelectedPMIds === null ? activeIds : [...window.appState.rabSelectedPMIds];
-  window.appState.rabSelectedPMIds = currentlySelected.length === activeIds.length ? new Set() : new Set(activeIds);
+  const activeIds = window.appState.pms
+    .filter((pm) => (pm.status || "Aktif") === "Aktif")
+    .map((pm) => String(pm.id));
+  const currentlySelected =
+    window.appState.rabSelectedPMIds === null
+      ? activeIds
+      : [...window.appState.rabSelectedPMIds];
+  window.appState.rabSelectedPMIds =
+    currentlySelected.length === activeIds.length
+      ? new Set()
+      : new Set(activeIds);
   renderRabPMChoices();
 };
 
@@ -3610,54 +5077,102 @@ window.closeRabModal = function () {
 
 window.updateRabPeriodFields = function () {
   const type = document.getElementById("rabPeriodType")?.value || "daily";
-  document.getElementById("rabDailyFields")?.classList.toggle("hidden", type !== "daily");
-  document.getElementById("rabWeeklyFields")?.classList.toggle("hidden", type !== "weekly");
-  document.getElementById("rabWeeklyFields")?.classList.toggle("grid", type === "weekly");
-  document.getElementById("rabMonthlyFields")?.classList.toggle("hidden", type !== "monthly");
-  document.getElementById("rabMonthlyFields")?.classList.toggle("grid", type === "monthly");
-  document.getElementById("rabYearlyFields")?.classList.toggle("hidden", type !== "yearly");
+  document
+    .getElementById("rabDailyFields")
+    ?.classList.toggle("hidden", type !== "daily");
+  document
+    .getElementById("rabWeeklyFields")
+    ?.classList.toggle("hidden", type !== "weekly");
+  document
+    .getElementById("rabWeeklyFields")
+    ?.classList.toggle("grid", type === "weekly");
+  document
+    .getElementById("rabMonthlyFields")
+    ?.classList.toggle("hidden", type !== "monthly");
+  document
+    .getElementById("rabMonthlyFields")
+    ?.classList.toggle("grid", type === "monthly");
+  document
+    .getElementById("rabYearlyFields")
+    ?.classList.toggle("hidden", type !== "yearly");
 };
 
 window.downloadRab = function (event) {
   event.preventDefault();
-  if (!window.appState.menusLoaded) return showToast("Data menu dari Firebase masih dimuat. Coba unduh RAB kembali sebentar lagi.", "info");
+  if (isOperationalPage()) return;
+  if (!window.appState.menusLoaded)
+    return showToast(
+      "Data menu dari Firebase masih dimuat. Coba unduh RAB kembali sebentar lagi.",
+      "info",
+    );
   const type = document.getElementById("rabPeriodType").value;
   let startDate = "";
   let endDate = "";
   let periodLabel = "";
   if (type === "daily") {
     startDate = endDate = document.getElementById("rabDate").value;
-    if (!startDate) return showToast("Pilih tanggal laporan terlebih dahulu", "error");
+    if (!startDate)
+      return showToast("Pilih tanggal laporan terlebih dahulu", "error");
     periodLabel = `Harian ${formatDateID(startDate)}`;
   } else if (type === "weekly") {
     startDate = document.getElementById("rabStartDate").value;
     endDate = document.getElementById("rabEndDate").value;
-    if (!startDate || !endDate || endDate < startDate) return showToast("Rentang tanggal RAB mingguan tidak valid", "error");
+    if (!startDate || !endDate || endDate < startDate)
+      return showToast("Rentang tanggal RAB mingguan tidak valid", "error");
     periodLabel = `Mingguan ${formatDateID(startDate)} - ${formatDateID(endDate)}`;
   } else if (type === "monthly") {
     const year = document.getElementById("rabMonthYear").value;
-    const month = String(document.getElementById("rabMonth").value).padStart(2, "0");
-    if (!/^\d{4}$/.test(year)) return showToast("Tahun laporan tidak valid", "error");
+    const month = String(document.getElementById("rabMonth").value).padStart(
+      2,
+      "0",
+    );
+    if (!/^\d{4}$/.test(year))
+      return showToast("Tahun laporan tidak valid", "error");
     startDate = `${year}-${month}-01`;
     endDate = `${year}-${month}-${new Date(Number(year), Number(month), 0).getDate()}`;
     periodLabel = `Bulanan ${new Date(Number(year), Number(month) - 1, 1).toLocaleDateString("id-ID", { month: "long", year: "numeric" })}`;
   } else {
     const year = document.getElementById("rabYear").value;
-    if (!/^\d{4}$/.test(year)) return showToast("Tahun laporan tidak valid", "error");
+    if (!/^\d{4}$/.test(year))
+      return showToast("Tahun laporan tidak valid", "error");
     startDate = `${year}-01-01`;
     endDate = `${year}-12-31`;
     periodLabel = `Tahunan ${year}`;
   }
-  if (!startDate || !endDate) return showToast("Pilih tanggal laporan terlebih dahulu", "error");
+  if (!startDate || !endDate)
+    return showToast("Pilih tanggal laporan terlebih dahulu", "error");
 
   const items = window.appState.barang
-    .filter((item) => String(item.tanggal || "") >= startDate && String(item.tanggal || "") <= endDate)
-    .sort((a, b) => String(a.tanggal || "").localeCompare(String(b.tanggal || "")) || String(a.nama || a.name || "").localeCompare(String(b.nama || b.name || ""), "id"));
+    .filter(
+      (item) =>
+        String(item.tanggal || "") >= startDate &&
+        String(item.tanggal || "") <= endDate,
+    )
+    .sort(
+      (a, b) =>
+        String(a.tanggal || "").localeCompare(String(b.tanggal || "")) ||
+        String(a.nama || a.name || "").localeCompare(
+          String(b.nama || b.name || ""),
+          "id",
+        ),
+    );
   const menusForPeriod = window.appState.menus
-    .filter((menu) => String(menu.tanggal || "") >= startDate && String(menu.tanggal || "") <= endDate)
-    .sort((a, b) => String(a.tanggal || "").localeCompare(String(b.tanggal || "")) || String(a.namaMenu || "").localeCompare(String(b.namaMenu || ""), "id"));
+    .filter(
+      (menu) =>
+        String(menu.tanggal || "") >= startDate &&
+        String(menu.tanggal || "") <= endDate,
+    )
+    .sort(
+      (a, b) =>
+        String(a.tanggal || "").localeCompare(String(b.tanggal || "")) ||
+        String(a.namaMenu || "").localeCompare(String(b.namaMenu || ""), "id"),
+    );
   const selectedPMIds = window.appState.rabSelectedPMIds;
-  const activePMs = window.appState.pms.filter((pm) => (pm.status || "Aktif") === "Aktif" && (selectedPMIds === null || selectedPMIds.has(String(pm.id))));
+  const activePMs = window.appState.pms.filter(
+    (pm) =>
+      (pm.status || "Aktif") === "Aktif" &&
+      (selectedPMIds === null || selectedPMIds.has(String(pm.id))),
+  );
   let porsiBesar = 0;
   let porsiKecil = 0;
   activePMs.forEach((pm) => {
@@ -3675,33 +5190,121 @@ window.downloadRab = function (event) {
     }
   });
   const totalPagu = porsiBesar * 10000 + porsiKecil * 8000;
-  const formatMoney = (value) => `Rp ${Number(value || 0).toLocaleString("id-ID")}`;
-  const safe = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
-  const generatedAt = new Date().toLocaleString("id-ID", { dateStyle: "long", timeStyle: "short" });
-  const totalBarang = items.reduce((sum, item) => sum + Number(item.kebutuhan || 0) * Number(item.harga || 0), 0);
-  const rows = items.length ? items.map((item, index) => {
-    const quantity = Number(item.kebutuhan || 0);
-    const unitPrice = Number(item.harga || 0);
-    return `<tr><td>${index + 1}</td><td>${safe(item.nama || item.name || "-")}</td><td class="number">${quantity.toLocaleString("id-ID")}</td><td>${safe(item.satuan || "-")}</td><td class="number">${formatMoney(unitPrice)}</td><td class="number">${formatMoney(quantity * unitPrice)}</td><td>${safe(item.keterangan || "")}</td></tr>`;
-  }).join("") : '<tr><td colspan="7" class="empty">Tidak ada data barang dalam periode ini.</td></tr>';
-  const menuRows = menusForPeriod.length ? menusForPeriod.map((menu) => `<tr><td>${safe(formatDateID(menu.tanggal || ""))}</td><td>${safe(menu.namaMenu || "-")}</td><td class="number">${safe(menu.energi ?? "-")}</td><td class="number">${safe(menu.protein ?? "-")}</td><td class="number">${safe(menu.lemak ?? "-")}</td><td class="number">${safe(menu.karbohidrat ?? "-")}</td><td class="number">${safe(menu.serat ?? "-")}</td></tr>`).join("") : '<tr><td colspan="7" class="empty">Belum ada menu tersimpan di database pada periode ini.</td></tr>';
+  const formatMoney = (value) =>
+    `Rp ${Number(value || 0).toLocaleString("id-ID")}`;
+  const safe = (value) =>
+    String(value ?? "").replace(
+      /[&<>"']/g,
+      (char) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[char],
+    );
+  const generatedAt = new Date().toLocaleString("id-ID", {
+    dateStyle: "long",
+    timeStyle: "short",
+  });
+  const totalBarang = items.reduce(
+    (sum, item) => sum + Number(item.kebutuhan || 0) * Number(item.harga || 0),
+    0,
+  );
+  const rows = items.length
+    ? items
+        .map((item, index) => {
+          const quantity = Number(item.kebutuhan || 0);
+          const unitPrice = Number(item.harga || 0);
+          return `<tr><td>${index + 1}</td><td>${safe(item.nama || item.name || "-")}</td><td class="number">${quantity.toLocaleString("id-ID")}</td><td>${safe(item.satuan || "-")}</td><td class="number">${formatMoney(unitPrice)}</td><td class="number">${formatMoney(quantity * unitPrice)}</td><td>${safe(item.keterangan || "")}</td></tr>`;
+        })
+        .join("")
+    : '<tr><td colspan="7" class="empty">Tidak ada data barang dalam periode ini.</td></tr>';
+  const menuRows = menusForPeriod.length
+    ? menusForPeriod
+        .map(
+          (menu) =>
+            `<tr><td>${safe(formatDateID(menu.tanggal || ""))}</td><td>${safe(menu.namaMenu || "-")}</td><td class="number">${safe(menu.energi ?? "-")}</td><td class="number">${safe(menu.protein ?? "-")}</td><td class="number">${safe(menu.lemak ?? "-")}</td><td class="number">${safe(menu.karbohidrat ?? "-")}</td><td class="number">${safe(menu.serat ?? "-")}</td></tr>`,
+        )
+        .join("")
+    : '<tr><td colspan="7" class="empty">Belum ada menu tersimpan di database pada periode ini.</td></tr>';
   const menuReportTable = `<h2>MENU DAN KANDUNGAN GIZI</h2><table><thead><tr><th>TANGGAL</th><th>NAMA MENU</th><th>ENERGI (kkal)</th><th>PROTEIN (g)</th><th>LEMAK (g)</th><th>KARBOHIDRAT (g)</th><th>SERAT (g)</th></tr></thead><tbody>${menuRows}</tbody></table>`;
   const getPMPortions = (pm) => {
-    if (pm.jenis === "SD") return [{ size: "Besar", recipientType: "Siswa kelas 4-6 / Guru-Tendik", count: Number(pm.kelas46 || 0) + Number(pm.guruTendik || 0) }, { size: "Kecil", recipientType: "Siswa kelas 1-3", count: Number(pm.kelas13 || 0) }];
-    if (pm.jenis === "B3") return [{ size: "Besar", recipientType: "B3 - Bumil/Busui", count: Number(pm.bumil || 0) + Number(pm.busui || 0) }, { size: "Kecil", recipientType: "B3 - Balita", count: Number(pm.balita || 0) }];
-    if (pm.jenis === "TK") return [{ size: "Besar", recipientType: "Guru/Tendik", count: Number(pm.guruTendik || 0) }, { size: "Kecil", recipientType: "Siswa TK", count: Number(pm.target || 0) }];
-    return [{ size: "Besar", recipientType: "Siswa/Guru-Tendik", count: Number(pm.target || 0) + Number(pm.guruTendik || 0) }];
+    if (pm.jenis === "SD")
+      return [
+        {
+          size: "Besar",
+          recipientType: "Siswa kelas 4-6 / Guru-Tendik",
+          count: Number(pm.kelas46 || 0) + Number(pm.guruTendik || 0),
+        },
+        {
+          size: "Kecil",
+          recipientType: "Siswa kelas 1-3",
+          count: Number(pm.kelas13 || 0),
+        },
+      ];
+    if (pm.jenis === "B3")
+      return [
+        {
+          size: "Besar",
+          recipientType: "B3 - Bumil/Busui",
+          count: Number(pm.bumil || 0) + Number(pm.busui || 0),
+        },
+        {
+          size: "Kecil",
+          recipientType: "B3 - Balita",
+          count: Number(pm.balita || 0),
+        },
+      ];
+    if (pm.jenis === "TK")
+      return [
+        {
+          size: "Besar",
+          recipientType: "Guru/Tendik",
+          count: Number(pm.guruTendik || 0),
+        },
+        {
+          size: "Kecil",
+          recipientType: "Siswa TK",
+          count: Number(pm.target || 0),
+        },
+      ];
+    return [
+      {
+        size: "Besar",
+        recipientType: "Siswa/Guru-Tendik",
+        count: Number(pm.target || 0) + Number(pm.guruTendik || 0),
+      },
+    ];
   };
-  const pmRows = activePMs.flatMap((pm) => getPMPortions(pm).filter((portion) => portion.count > 0).map((portion) => {
-    const unitPrice = portion.size === "Besar" ? 10000 : 8000;
-    return `<tr><td>${safe(pm.nama || "-")}</td><td>${portion.size} Â· ${safe(portion.recipientType)}</td><td class="number">${portion.count.toLocaleString("id-ID")}</td><td class="number">${formatMoney(unitPrice)}</td><td class="number">${formatMoney(portion.count * unitPrice)}</td></tr>`;
-  })).join("") || '<tr><td colspan="5" class="empty">Tidak ada PM aktif.</td></tr>';
+  const pmRows =
+    activePMs
+      .flatMap((pm) =>
+        getPMPortions(pm)
+          .filter((portion) => portion.count > 0)
+          .map((portion) => {
+            const unitPrice = portion.size === "Besar" ? 10000 : 8000;
+            return `<tr><td>${safe(pm.nama || "-")}</td><td>${portion.size} Â· ${safe(portion.recipientType)}</td><td class="number">${portion.count.toLocaleString("id-ID")}</td><td class="number">${formatMoney(unitPrice)}</td><td class="number">${formatMoney(portion.count * unitPrice)}</td></tr>`;
+          }),
+      )
+      .join("") ||
+    '<tr><td colspan="5" class="empty">Tidak ada PM aktif.</td></tr>';
   const kitchenProfile = getKitchenProfile();
-  const kitchenName = safe(kitchenProfile.kitchenName || "SPPG Ogan Ilir Pemulutan Muara Dua");
-  const periodDateLabel = type === "daily" ? formatDateID(startDate) : `${formatDateID(startDate)} - ${formatDateID(endDate)}`;
+  const kitchenName = safe(
+    kitchenProfile.kitchenName || "SPPG Ogan Ilir Pemulutan Muara Dua",
+  );
+  const periodDateLabel =
+    type === "daily"
+      ? formatDateID(startDate)
+      : `${formatDateID(startDate)} - ${formatDateID(endDate)}`;
   const reportHtml = `<!doctype html><html lang="id"><head><meta charset="utf-8"><title>RAB MBG - ${safe(periodLabel)}</title><style>@page{size:A4 landscape;margin:13mm}*{box-sizing:border-box}body{font:12px Arial,sans-serif;color:#111}h1{font-size:15px;margin:0;text-align:center;font-weight:700}h2{font-size:13px;margin:18px 0 6px}.header{text-align:center;line-height:1.4;margin-bottom:10px}.header .date{margin-top:4px}.menu{text-align:center;font-weight:bold;margin:8px 0}table{width:100%;border-collapse:collapse;font-size:10px}th,td{padding:5px 7px;border:1px solid #111;text-align:left}th{background:#58c5e6;text-align:center}.number{text-align:right;white-space:nowrap}.center{text-align:center}.total-row td{font-weight:bold}.summary{width:70%;margin-left:auto;margin-top:15px}.summary th{background:#fff}.signatures{display:flex;justify-content:flex-end;gap:70px;margin:38px 35px 0}.sign{min-width:160px;text-align:center}.sign-space{height:55px}.note{font-size:9px;margin-top:12px;color:#475569}@media print{tr{break-inside:avoid}}</style></head><body><div class="header"><h1>${kitchenName.toLocaleUpperCase("id-ID")}</h1><strong>YAYASAN KEMALA BHAYANGKARI</strong><div class="date">HARI : ${safe(periodDateLabel)}</div><div class="menu">RAB ${safe(periodLabel)}</div></div>${menuReportTable}<table><thead><tr><th style="width:5%">No.</th><th style="width:22%">URAIAN</th><th style="width:15%">QTY</th><th style="width:18%">SATUAN</th><th style="width:18%">Harga</th><th style="width:18%">Total HARGA</th><th style="width:18%">KETERANGAN</th></tr></thead><tbody>${rows}<tr class="total-row"><td colspan="5" class="number">Total</td><td class="number">${formatMoney(totalBarang)}</td><td></td></tr></tbody></table><h2>RINCIAN PORSI DAN PAGU PM</h2><table><thead><tr><th style="width:28%">PENERIMA MANFAAT</th><th style="width:30%">PORSI / KATEGORI</th><th style="width:14%">JUMLAH PENERIMA</th><th style="width:14%">PAGU</th><th style="width:14%">TOTAL</th></tr></thead><tbody>${pmRows}<tr class="total-row"><td colspan="2" class="number">Total</td><td class="number">${(porsiBesar + porsiKecil).toLocaleString("id-ID")}</td><td></td><td class="number">${formatMoney(totalPagu)}</td></tr></tbody></table><table class="summary"><tbody><tr><td>Total Belanja Barang</td><td class="number">${formatMoney(totalBarang)}</td></tr><tr><td>Total Pagu PM</td><td class="number">${formatMoney(totalPagu)}</td></tr><tr class="total-row"><td>Grand Total RAB</td><td class="number">${formatMoney(totalBarang + totalPagu)}</td></tr></tbody></table><div class="note">Rincian jumlah mengikuti kategori penerima pada setiap PM: siswa/guru untuk sekolah, guru/tendik dan siswa TK, serta Bumil/Busui/Balita untuk B3. Tarif porsi besar Rp10.000 dan porsi kecil Rp8.000. Belanja barang dihitung dari jumlah kebutuhan Ã— harga satuan.</div><div class="signatures"><div class="sign">Mengetahui<div class="sign-space"></div>(................................)</div><div class="sign">Disusun oleh<div class="sign-space"></div>(................................)</div></div><script>window.addEventListener('load',()=>setTimeout(()=>window.print(),250));</script></body></html>`;
   const reportWindow = window.open("", "_blank");
-  if (!reportWindow) return showToast("Izinkan pop-up browser untuk membuka dan mengunduh RAB", "error");
+  if (!reportWindow)
+    return showToast(
+      "Izinkan pop-up browser untuk membuka dan mengunduh RAB",
+      "error",
+    );
   reportWindow.document.open();
   reportWindow.document.write(reportHtml);
   reportWindow.document.close();
@@ -3711,7 +5314,13 @@ window.downloadRab = function (event) {
     foundationHeader.textContent = kitchenProfile.foundationName || "";
     foundationHeader.hidden = !kitchenProfile.foundationName;
   }
-  if (reportHeader && kitchenProfile.foundationLogoDataUrl && /^data:image\/(?:webp|png|jpeg);base64,/i.test(kitchenProfile.foundationLogoDataUrl)) {
+  if (
+    reportHeader &&
+    kitchenProfile.foundationLogoDataUrl &&
+    /^data:image\/(?:webp|png|jpeg);base64,/i.test(
+      kitchenProfile.foundationLogoDataUrl,
+    )
+  ) {
     const logo = reportWindow.document.createElement("img");
     logo.className = "header-logo";
     logo.src = kitchenProfile.foundationLogoDataUrl;
@@ -3731,7 +5340,9 @@ window.downloadRab = function (event) {
     reportHeader.insertBefore(contact, reportHeader.querySelector(".date"));
   }
   const reportStyle = reportWindow.document.querySelector("style");
-  if (reportStyle) reportStyle.textContent += ".header{position:relative;padding:4px 86px 8px;min-height:76px}.header-logo{position:absolute;left:4px;top:2px;width:72px;height:72px;object-fit:contain}.header-detail{font-size:10px;line-height:1.3;margin-top:2px}";
+  if (reportStyle)
+    reportStyle.textContent +=
+      ".header{position:relative;padding:4px 86px 8px;min-height:76px}.header-logo{position:absolute;left:4px;top:2px;width:72px;height:72px;object-fit:contain}.header-detail{font-size:10px;line-height:1.3;margin-top:2px}";
   closeRabModal();
 };
 
@@ -3791,21 +5402,32 @@ function renderMenuTable() {
 
   const query = (search?.value || "").trim().toLocaleLowerCase("id-ID");
   const menus = [...window.appState.menus]
-    .filter((menu) => `${menu.namaMenu || ""} ${menu.energi || ""} ${menu.protein || ""} ${menu.lemak || ""} ${menu.karbohidrat || ""} ${menu.serat || ""} ${menu.akg || ""}`.toLocaleLowerCase("id-ID").includes(query))
-    .sort((a, b) => String(b.tanggal || "").localeCompare(String(a.tanggal || "")));
+    .filter((menu) =>
+      `${menu.namaMenu || ""} ${menu.energi || ""} ${menu.protein || ""} ${menu.lemak || ""} ${menu.karbohidrat || ""} ${menu.serat || ""} ${menu.akg || ""}`
+        .toLocaleLowerCase("id-ID")
+        .includes(query),
+    )
+    .sort((a, b) =>
+      String(b.tanggal || "").localeCompare(String(a.tanggal || "")),
+    );
 
   if (!menus.length) {
-      tbody.innerHTML = `<tr><td colspan="8" class="px-5 py-10 text-center text-slate-400">${query ? "Menu tidak ditemukan" : "Belum ada menu. Tambahkan menu pertama."}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="px-5 py-10 text-center text-slate-400">${query ? "Menu tidak ditemukan" : "Belum ada menu. Tambahkan menu pertama."}</td></tr>`;
     renderMenuPagination(0);
     return;
   }
 
   const pageSize = window.appState.menuPageSize || 10;
   const pageCount = Math.max(1, Math.ceil(menus.length / pageSize));
-  window.appState.menuPage = Math.min(Math.max(1, window.appState.menuPage || 1), pageCount);
+  window.appState.menuPage = Math.min(
+    Math.max(1, window.appState.menuPage || 1),
+    pageCount,
+  );
   const start = (window.appState.menuPage - 1) * pageSize;
   const visibleMenus = menus.slice(start, start + pageSize);
-  tbody.innerHTML = visibleMenus.map((menu) => `
+  tbody.innerHTML = visibleMenus
+    .map(
+      (menu) => `
     <tr class="hover:bg-slate-50/80 transition-colors">
       <td class="px-5 py-4 whitespace-nowrap font-medium text-slate-600">${escapeHtml(formatDateID(menu.tanggal || ""))}</td>
       <td class="px-5 py-4 font-bold text-slate-800">${escapeHtml(menu.namaMenu || "-")}</td>
@@ -3818,7 +5440,9 @@ function renderMenuTable() {
         <button type="button" onclick="editMenu('${escapeHtml(menu.id)}')" class="p-2 text-sky-600 hover:bg-sky-50 rounded-lg" title="Edit menu"><i class="fa-solid fa-pen-to-square"></i></button>
         <button type="button" onclick="deleteMenu('${escapeHtml(menu.id)}')" class="p-2 text-red-600 hover:bg-red-50 rounded-lg" title="Hapus menu"><i class="fa-solid fa-trash-can"></i></button>
       </td>
-    </tr>`).join("");
+    </tr>`,
+    )
+    .join("");
   renderMenuPagination(menus.length);
 }
 
@@ -3845,7 +5469,10 @@ function renderMenuPagination(total) {
 }
 
 window.changeMenuPage = function (direction) {
-  window.appState.menuPage = Math.max(1, (window.appState.menuPage || 1) + Number(direction));
+  window.appState.menuPage = Math.max(
+    1,
+    (window.appState.menuPage || 1) + Number(direction),
+  );
   renderMenuTable();
 };
 
@@ -3866,10 +5493,19 @@ window.openMenuModal = function (menuId = "") {
     const menu = window.appState.menus.find((item) => item.id === menuId);
     if (!menu) return;
     document.getElementById("menuId").value = menu.id;
-    document.getElementById("menuTanggal").value = menu.tanggal || getLocalDateString();
+    document.getElementById("menuTanggal").value =
+      menu.tanggal || getLocalDateString();
     document.getElementById("menuNama").value = menu.namaMenu || "";
-    for (const field of ["energi", "protein", "lemak", "karbohidrat", "serat"]) {
-      const input = document.getElementById(`menu${field[0].toUpperCase()}${field.slice(1)}`);
+    for (const field of [
+      "energi",
+      "protein",
+      "lemak",
+      "karbohidrat",
+      "serat",
+    ]) {
+      const input = document.getElementById(
+        `menu${field[0].toUpperCase()}${field.slice(1)}`,
+      );
       if (input) input.value = menu[field] || "";
     }
     document.getElementById("menuModalTitle").textContent = "Edit Menu";
@@ -3890,7 +5526,13 @@ window.saveMenu = async function (event) {
   const button = document.getElementById("saveMenuBtn");
   const id = document.getElementById("menuId").value || `menu_${Date.now()}`;
   const previous = window.appState.menus.find((menu) => menu.id === id);
-  const numericAkgFields = ["menuEnergi", "menuProtein", "menuLemak", "menuKarbohidrat", "menuSerat"];
+  const numericAkgFields = [
+    "menuEnergi",
+    "menuProtein",
+    "menuLemak",
+    "menuKarbohidrat",
+    "menuSerat",
+  ];
   const menu = {
     tanggal: document.getElementById("menuTanggal").value,
     namaMenu: document.getElementById("menuNama").value.trim(),
@@ -3900,10 +5542,28 @@ window.saveMenu = async function (event) {
     karbohidrat: Number(document.getElementById("menuKarbohidrat").value),
     serat: Number(document.getElementById("menuSerat").value),
     updatedAt: new Date().toISOString(),
-    ...(previous ? {} : { createdAt: new Date().toISOString(), createdBy: window.appState.user?.uid || "" }),
+    ...(previous
+      ? {}
+      : {
+          createdAt: new Date().toISOString(),
+          createdBy: window.appState.user?.uid || "",
+        }),
   };
-  if (!menu.tanggal || !menu.namaMenu || numericAkgFields.some((fieldId) => document.getElementById(fieldId).value.trim() === "") || numericAkgFields.some((fieldId) => !Number.isFinite(Number(document.getElementById(fieldId).value)))) {
-    showToast("Tanggal, nama menu, dan semua komponen AKG wajib diisi", "error");
+  if (
+    !menu.tanggal ||
+    !menu.namaMenu ||
+    numericAkgFields.some(
+      (fieldId) => document.getElementById(fieldId).value.trim() === "",
+    ) ||
+    numericAkgFields.some(
+      (fieldId) =>
+        !Number.isFinite(Number(document.getElementById(fieldId).value)),
+    )
+  ) {
+    showToast(
+      "Tanggal, nama menu, dan semua komponen AKG wajib diisi",
+      "error",
+    );
     return;
   }
   setButtonLoading(button, true, "Menyimpan...");
@@ -3938,20 +5598,31 @@ function setupUsersListener() {
   usersListenerStarted = true;
   window.appState.usersLoaded = false;
   renderUsersTable();
-  onSnapshot(collection(db, "app_users"), (snapshot) => {
-    window.appState.users = snapshot.docs.map((userDoc) => ({
-      id: userDoc.id,
-      ...userDoc.data(),
-    })).sort((a, b) => String(a.email || a.id).localeCompare(String(b.email || b.id)));
-    window.appState.usersLoaded = true;
-    renderUsersTable();
-  }, (error) => {
-    console.error("Gagal memuat daftar pengguna:", error);
-    window.appState.users = [];
-    window.appState.usersLoaded = true;
-    renderUsersTable();
-    showToast("Daftar pengguna gagal dimuat. Periksa Firestore Rules.", "error");
-  });
+  onSnapshot(
+    collection(db, "app_users"),
+    (snapshot) => {
+      window.appState.users = snapshot.docs
+        .map((userDoc) => ({
+          id: userDoc.id,
+          ...userDoc.data(),
+        }))
+        .sort((a, b) =>
+          String(a.email || a.id).localeCompare(String(b.email || b.id)),
+        );
+      window.appState.usersLoaded = true;
+      renderUsersTable();
+    },
+    (error) => {
+      console.error("Gagal memuat daftar pengguna:", error);
+      window.appState.users = [];
+      window.appState.usersLoaded = true;
+      renderUsersTable();
+      showToast(
+        "Daftar pengguna gagal dimuat. Periksa Firestore Rules.",
+        "error",
+      );
+    },
+  );
 }
 
 function renderUsersTable() {
@@ -3967,17 +5638,26 @@ function renderUsersTable() {
   }
   const pageSize = window.appState.userPageSize || 10;
   const pages = Math.max(1, Math.ceil(window.appState.users.length / pageSize));
-  window.appState.userPage = Math.min(Math.max(1, window.appState.userPage || 1), pages);
+  window.appState.userPage = Math.min(
+    Math.max(1, window.appState.userPage || 1),
+    pages,
+  );
   const start = (window.appState.userPage - 1) * pageSize;
   const users = window.appState.users.slice(start, start + pageSize);
   if (!users.length) {
     tbody.innerHTML = `<tr><td colspan="5" class="px-5 py-10 text-center text-slate-400">Belum ada akun yang diizinkan.</td></tr>`;
   } else {
-    tbody.innerHTML = users.map((account) => {
-      const isSelf = normalizeAccountEmail(account.email || account.id) === normalizeAccountEmail(window.appState.user?.email);
-      const roleLabel = account.role === USER_ROLES.SUPER_ADMIN ? "Super Admin" : "Admin Logistik";
-      const accountKey = encodeURIComponent(account.id);
-      return `<tr class="hover:bg-slate-50/80">
+    tbody.innerHTML = users
+      .map((account) => {
+        const isSelf =
+          normalizeAccountEmail(account.email || account.id) ===
+          normalizeAccountEmail(window.appState.user?.email);
+        const roleLabel =
+          account.role === USER_ROLES.SUPER_ADMIN
+            ? "Super Admin"
+            : "Admin Logistik";
+        const accountKey = encodeURIComponent(account.id);
+        return `<tr class="hover:bg-slate-50/80">
         <td class="px-5 py-4 font-semibold text-slate-800">${escapeHtml(account.email || account.id)} ${isSelf ? '<span class="ml-1 text-[10px] text-sky-600">(Anda)</span>' : ""}</td>
         <td class="px-5 py-4"><span class="rounded-full px-2.5 py-1 text-[10px] font-bold ${account.role === USER_ROLES.SUPER_ADMIN ? "bg-violet-100 text-violet-700" : "bg-sky-100 text-sky-700"}">${roleLabel}</span></td>
         <td class="px-5 py-4"><span class="rounded-full px-2.5 py-1 text-[10px] font-bold ${account.active === true ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}">${account.active === true ? "Aktif" : "Nonaktif"}</span></td>
@@ -3987,7 +5667,8 @@ function renderUsersTable() {
           <button type="button" onclick="removeAppUser(decodeURIComponent('${accountKey}'))" ${isSelf ? "disabled title='Tidak dapat menghapus akun sendiri'" : "title='Hapus akses pengguna'"} class="p-2 text-rose-600 hover:bg-rose-50 rounded-lg disabled:opacity-40"><i class="fa-solid fa-user-xmark"></i></button>
         </td>
       </tr>`;
-    }).join("");
+      })
+      .join("");
   }
   renderUsersPagination();
 }
@@ -4003,7 +5684,10 @@ function renderUsersPagination() {
 }
 
 window.changeUserPage = function (direction) {
-  window.appState.userPage = Math.max(1, (window.appState.userPage || 1) + Number(direction));
+  window.appState.userPage = Math.max(
+    1,
+    (window.appState.userPage || 1) + Number(direction),
+  );
   renderUsersTable();
 };
 
@@ -4014,7 +5698,11 @@ window.changeUserPageSize = function (size) {
 };
 
 window.openAppUserModal = function (email = "") {
-  if (!isSuperAdmin()) return showToast("Hanya Super Admin yang dapat mengelola pengguna", "error");
+  if (!isSuperAdmin())
+    return showToast(
+      "Hanya Super Admin yang dapat mengelola pengguna",
+      "error",
+    );
   const form = document.getElementById("formAppUser");
   if (!form) return;
   form.reset();
@@ -4030,11 +5718,12 @@ window.openAppUserModal = function (email = "") {
     document.getElementById("appUserOriginalEmail").value = account.id;
     document.getElementById("appUserEmail").value = account.email || account.id;
     document.getElementById("appUserEmail").disabled = true;
-    document.getElementById("appUserRole").value = account.role || USER_ROLES.LOGISTICS;
+    document.getElementById("appUserRole").value =
+      account.role || USER_ROLES.LOGISTICS;
     document.getElementById("appUserActive").checked = account.active === true;
-    document.getElementById("appUserModalTitle").textContent = "Atur Akses Pengguna";
+    document.getElementById("appUserModalTitle").textContent =
+      "Atur Akses Pengguna";
   }
-  document.getElementById("modalAppUser").classList.remove("hidden");
 };
 
 window.editAppUser = function (email) {
@@ -4047,31 +5736,61 @@ window.closeAppUserModal = function () {
 
 window.saveAppUser = async function (event) {
   event.preventDefault();
-  if (!isSuperAdmin()) return showToast("Hanya Super Admin yang dapat mengelola pengguna", "error");
-  const email = normalizeAccountEmail(document.getElementById("appUserEmail").value);
+  if (!isSuperAdmin())
+    return showToast(
+      "Hanya Super Admin yang dapat mengelola pengguna",
+      "error",
+    );
+  const email = normalizeAccountEmail(
+    document.getElementById("appUserEmail").value,
+  );
   const originalEmail = document.getElementById("appUserOriginalEmail").value;
   const role = document.getElementById("appUserRole").value;
   const active = document.getElementById("appUserActive").checked;
-  if (!email || !email.includes("@") || ![USER_ROLES.SUPER_ADMIN, USER_ROLES.LOGISTICS].includes(role)) {
+  if (
+    !email ||
+    !email.includes("@") ||
+    ![USER_ROLES.SUPER_ADMIN, USER_ROLES.LOGISTICS].includes(role)
+  ) {
     showToast("Email Google atau role tidak valid", "error");
     return;
   }
-  const existing = window.appState.users.find((account) => account.id === originalEmail);
-  if (existing && existing.role === USER_ROLES.SUPER_ADMIN && existing.active === true && (!active || role !== USER_ROLES.SUPER_ADMIN)) {
-    const activeSuperAdmins = window.appState.users.filter((account) => account.role === USER_ROLES.SUPER_ADMIN && account.active === true).length;
-    if (activeSuperAdmins <= 1) return showToast("Minimal harus ada satu Super Admin aktif", "error");
+  const existing = window.appState.users.find(
+    (account) => account.id === originalEmail,
+  );
+  if (
+    existing &&
+    existing.role === USER_ROLES.SUPER_ADMIN &&
+    existing.active === true &&
+    (!active || role !== USER_ROLES.SUPER_ADMIN)
+  ) {
+    const activeSuperAdmins = window.appState.users.filter(
+      (account) =>
+        account.role === USER_ROLES.SUPER_ADMIN && account.active === true,
+    ).length;
+    if (activeSuperAdmins <= 1)
+      return showToast("Minimal harus ada satu Super Admin aktif", "error");
   }
   const button = document.getElementById("saveAppUserBtn");
   setButtonLoading(button, true, "Menyimpan...");
   try {
     const now = new Date().toISOString();
-    await setDoc(doc(db, "app_users", originalEmail || email), {
-      email,
-      role,
-      active,
-      updatedAt: now,
-      ...(existing ? {} : { createdAt: now, createdBy: normalizeAccountEmail(window.appState.user?.email) }),
-    }, { merge: true });
+    await setDoc(
+      doc(db, "app_users", originalEmail || email),
+      {
+        email,
+        role,
+        active,
+        updatedAt: now,
+        ...(existing
+          ? {}
+          : {
+              createdAt: now,
+              createdBy: normalizeAccountEmail(window.appState.user?.email),
+            }),
+      },
+      { merge: true },
+    );
     showToast("Akses pengguna berhasil disimpan", "success");
     window.closeAppUserModal();
   } catch (error) {
@@ -4083,10 +5802,25 @@ window.saveAppUser = async function (event) {
 };
 
 window.removeAppUser = async function (email) {
-  if (!isSuperAdmin()) return showToast("Hanya Super Admin yang dapat mengelola pengguna", "error");
+  if (!isSuperAdmin())
+    return showToast(
+      "Hanya Super Admin yang dapat mengelola pengguna",
+      "error",
+    );
   const account = window.appState.users.find((item) => item.id === email);
-  if (!account || normalizeAccountEmail(account.email || account.id) === normalizeAccountEmail(window.appState.user?.email)) return;
-  if (account.role === USER_ROLES.SUPER_ADMIN && account.active === true && window.appState.users.filter((item) => item.role === USER_ROLES.SUPER_ADMIN && item.active === true).length <= 1) {
+  if (
+    !account ||
+    normalizeAccountEmail(account.email || account.id) ===
+      normalizeAccountEmail(window.appState.user?.email)
+  )
+    return;
+  if (
+    account.role === USER_ROLES.SUPER_ADMIN &&
+    account.active === true &&
+    window.appState.users.filter(
+      (item) => item.role === USER_ROLES.SUPER_ADMIN && item.active === true,
+    ).length <= 1
+  ) {
     return showToast("Minimal harus ada satu Super Admin aktif", "error");
   }
   if (!window.confirm(`Cabut akses untuk ${account.email || email}?`)) return;
@@ -4109,23 +5843,48 @@ function getKitchenLocation() {
     const latitude = Number(settings.kitchenLatitude);
     const longitude = Number(settings.kitchenLongitude);
     if (
-      settings.kitchenLatitude == null || settings.kitchenLatitude === "" ||
-      settings.kitchenLongitude == null || settings.kitchenLongitude === "" ||
+      settings.kitchenLatitude == null ||
+      settings.kitchenLatitude === "" ||
+      settings.kitchenLongitude == null ||
+      settings.kitchenLongitude === "" ||
       !Number.isFinite(latitude) ||
       !Number.isFinite(longitude) ||
-      latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180
-    ) return null;
-    return { latitude, longitude, name: settings.kitchenName || "Dapur MBG", address: settings.kitchenAddress || "" };
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180
+    )
+      return null;
+    return {
+      latitude,
+      longitude,
+      name: settings.kitchenName || "Dapur MBG",
+      address: settings.kitchenAddress || "",
+    };
   } catch {
     return null;
   }
 }
 
 function getPMCoordinates(pm) {
-  if (pm.latitude == null || pm.longitude == null || pm.latitude === "" || pm.longitude === "") return null;
+  if (
+    pm.latitude == null ||
+    pm.longitude == null ||
+    pm.latitude === "" ||
+    pm.longitude === ""
+  )
+    return null;
   const latitude = Number(pm.latitude);
   const longitude = Number(pm.longitude);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+  if (
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    longitude < -180 ||
+    longitude > 180
+  )
+    return null;
   return { latitude, longitude };
 }
 
@@ -4137,7 +5896,9 @@ function getPMRouteRequestData(kitchen) {
   if (!destinations.length) return null;
   const points = [
     `${kitchen.longitude},${kitchen.latitude}`,
-    ...destinations.map(({ coordinates }) => `${coordinates.longitude},${coordinates.latitude}`),
+    ...destinations.map(
+      ({ coordinates }) => `${coordinates.longitude},${coordinates.latitude}`,
+    ),
   ];
   const key = JSON.stringify([
     points,
@@ -4147,11 +5908,14 @@ function getPMRouteRequestData(kitchen) {
 }
 
 async function loadPMRouteMetrics(requestData) {
-  if (!requestData || window.appState.pmRouteLoadingKey === requestData.key) return;
+  if (!requestData || window.appState.pmRouteLoadingKey === requestData.key)
+    return;
   window.appState.pmRouteLoadingKey = requestData.key;
   const params = new URLSearchParams({
     sources: "0",
-    destinations: requestData.destinations.map((_, index) => index + 1).join(";"),
+    destinations: requestData.destinations
+      .map((_, index) => index + 1)
+      .join(";"),
     annotations: "distance,duration",
   });
   const coordinates = requestData.points.join(";");
@@ -4161,7 +5925,11 @@ async function loadPMRouteMetrics(requestData) {
     );
     if (!response.ok) throw new Error("Layanan rute tidak merespons.");
     const result = await response.json();
-    if (result.code !== "Ok" || !result.distances?.[0] || !result.durations?.[0]) {
+    if (
+      result.code !== "Ok" ||
+      !result.distances?.[0] ||
+      !result.durations?.[0]
+    ) {
       throw new Error("Rute jalan tidak ditemukan.");
     }
     window.appState.pmRouteMetrics = {
@@ -4169,7 +5937,8 @@ async function loadPMRouteMetrics(requestData) {
       byId: Object.fromEntries(
         requestData.destinations.map(({ pm }, index) => [
           String(pm.id),
-          result.distances[0][index] == null || result.durations[0][index] == null
+          result.distances[0][index] == null ||
+          result.durations[0][index] == null
             ? null
             : {
                 distanceMeters: result.distances[0][index],
@@ -4179,7 +5948,11 @@ async function loadPMRouteMetrics(requestData) {
       ),
     };
   } catch (error) {
-    window.appState.pmRouteMetrics = { key: requestData.key, error: true, byId: {} };
+    window.appState.pmRouteMetrics = {
+      key: requestData.key,
+      error: true,
+      byId: {},
+    };
     console.warn("PM road route estimates could not be loaded:", error);
   } finally {
     if (window.appState.pmRouteLoadingKey === requestData.key) {
@@ -4201,7 +5974,9 @@ function formatRouteDuration(seconds) {
   const totalMinutes = Math.max(1, Math.round(seconds / 60));
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  return hours ? `${hours} jam${minutes ? ` ${minutes} menit` : ""}` : `${totalMinutes} menit`;
+  return hours
+    ? `${hours} jam${minutes ? ` ${minutes} menit` : ""}`
+    : `${totalMinutes} menit`;
 }
 
 function renderPMCards() {
@@ -4212,63 +5987,79 @@ function renderPMCards() {
   renderPMSummary();
   const kitchen = getKitchenLocation();
   const routeRequest = getPMRouteRequestData(kitchen);
-  if (routeRequest && window.appState.pmRouteMetrics?.key !== routeRequest.key) {
+  if (
+    routeRequest &&
+    window.appState.pmRouteMetrics?.key !== routeRequest.key
+  ) {
     loadPMRouteMetrics(routeRequest);
   }
-  const routeMetrics = window.appState.pmRouteMetrics?.key === routeRequest?.key
-    ? window.appState.pmRouteMetrics
-    : null;
-  const inactivePMs = window.appState.pms.filter((pm) => pm.status === "Nonaktif");
+  const routeMetrics =
+    window.appState.pmRouteMetrics?.key === routeRequest?.key
+      ? window.appState.pmRouteMetrics
+      : null;
+  const inactivePMs = window.appState.pms.filter(
+    (pm) => pm.status === "Nonaktif",
+  );
 
   if (!window.appState.pmsLoaded) {
     container.innerHTML = `<div class="md:col-span-2 lg:col-span-3 rounded-2xl border border-sky-100 bg-white py-10 text-center text-sm font-medium text-sky-700"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Memuat data penerima manfaat dari Firebase...</div>`;
     return;
   }
 
-  const activePMs = window.appState.pms.filter((pm) => (pm.status || "Aktif") === "Aktif");
+  const activePMs = window.appState.pms.filter(
+    (pm) => (pm.status || "Aktif") === "Aktif",
+  );
   if (!activePMs.length && !inactivePMs.length) {
     container.innerHTML = `<div class="md:col-span-2 lg:col-span-3 text-center py-10 text-sm text-slate-400">Belum ada data penerima manfaat</div>`;
     return;
   }
 
-  container.innerHTML = `${activePMs.length ? activePMs
-    .map((pm) => {
-      const accent =
-        {
-          SD: "bg-sky-500",
-          TK: "bg-amber-500",
-          SMP: "bg-violet-500",
-          SMA: "bg-rose-500",
-          B3: "bg-emerald-500",
-        }[pm.jenis] || "bg-sky-500";
-      const cardTotal = getPMTotal(pm);
-      const pmCoordinates = getPMCoordinates(pm);
-      const routeMetric = routeMetrics?.byId?.[String(pm.id)];
-      const routeIsLoading = Boolean(routeRequest && !routeMetrics && window.appState.pmRouteLoadingKey === routeRequest.key);
-      const travelInfo = !kitchen || !pmCoordinates
-        ? "Atur koordinat dapur dan lokasi PM untuk melihat rute."
-        : routeMetric
-          ? `Rute jalan ${formatRouteDistance(routeMetric.distanceMeters)} Â· estimasi ${formatRouteDuration(routeMetric.durationSeconds)}.`
-          : routeIsLoading
-            ? "Menghitung jarak dan waktu rute jalan..."
-            : "Estimasi rute tidak tersedia. Gunakan Direction untuk membuka navigasi.";
-      const directionUrl = !kitchen || !pmCoordinates
-        ? ""
-        : `https://www.google.com/maps/dir/?api=1&origin=${kitchen.latitude},${kitchen.longitude}&destination=${pmCoordinates.latitude},${pmCoordinates.longitude}&travelmode=driving`;
-      const breakdown =
-        pm.jenis === "SD"
-          ? `Kelas 1-3: ${pm.kelas13 || 0} | Kelas 4-6: ${pm.kelas46 || 0} | Guru/Tendik: ${pm.guruTendik || 0}`
-          : pm.jenis === "B3"
-            ? `Balita: ${pm.balita || 0} | Bumil: ${pm.bumil || 0} | Busui: ${pm.busui || 0}`
-            : `Target: ${pm.target || 0} | Guru/Tendik: ${pm.guruTendik || 0}`;
-      const stats =
-        pm.jenis === "SD"
-          ? `<div><b>${pm.kelas13 || 0}</b><span>Kelas 1-3</span></div><div><b>${pm.kelas46 || 0}</b><span>Kelas 4-6</span></div><div><b>${pm.guruTendik || 0}</b><span>Guru/Tendik</span></div>`
-          : pm.jenis === "B3"
-            ? `<div><b>${pm.balita || 0}</b><span>Balita</span></div><div><b>${pm.bumil || 0}</b><span>Bumil</span></div><div><b>${pm.busui || 0}</b><span>Busui</span></div>`
-            : `<div><b>${pm.target || 0}</b><span>Penerima</span></div><div><b>${pm.guruTendik || 0}</b><span>Guru/Tendik</span></div>`;
+  container.innerHTML = `${
+    activePMs.length
+      ? activePMs
+          .map((pm) => {
+            const accent =
+              {
+                SD: "bg-sky-500",
+                TK: "bg-amber-500",
+                SMP: "bg-violet-500",
+                SMA: "bg-rose-500",
+                B3: "bg-emerald-500",
+              }[pm.jenis] || "bg-sky-500";
+            const cardTotal = getPMTotal(pm);
+            const pmCoordinates = getPMCoordinates(pm);
+            const routeMetric = routeMetrics?.byId?.[String(pm.id)];
+            const routeIsLoading = Boolean(
+              routeRequest &&
+              !routeMetrics &&
+              window.appState.pmRouteLoadingKey === routeRequest.key,
+            );
+            const travelInfo =
+              !kitchen || !pmCoordinates
+                ? "Atur koordinat dapur dan lokasi PM untuk melihat rute."
+                : routeMetric
+                  ? `Rute jalan ${formatRouteDistance(routeMetric.distanceMeters)} Â· estimasi ${formatRouteDuration(routeMetric.durationSeconds)}.`
+                  : routeIsLoading
+                    ? "Menghitung jarak dan waktu rute jalan..."
+                    : "Estimasi rute tidak tersedia. Gunakan Direction untuk membuka navigasi.";
+            const directionUrl =
+              !kitchen || !pmCoordinates
+                ? ""
+                : `https://www.google.com/maps/dir/?api=1&origin=${kitchen.latitude},${kitchen.longitude}&destination=${pmCoordinates.latitude},${pmCoordinates.longitude}&travelmode=driving`;
+            const breakdown =
+              pm.jenis === "SD"
+                ? `Kelas 1-3: ${pm.kelas13 || 0} | Kelas 4-6: ${pm.kelas46 || 0} | Guru/Tendik: ${pm.guruTendik || 0}`
+                : pm.jenis === "B3"
+                  ? `Balita: ${pm.balita || 0} | Bumil: ${pm.bumil || 0} | Busui: ${pm.busui || 0}`
+                  : `Target: ${pm.target || 0} | Guru/Tendik: ${pm.guruTendik || 0}`;
+            const stats =
+              pm.jenis === "SD"
+                ? `<div><b>${pm.kelas13 || 0}</b><span>Kelas 1-3</span></div><div><b>${pm.kelas46 || 0}</b><span>Kelas 4-6</span></div><div><b>${pm.guruTendik || 0}</b><span>Guru/Tendik</span></div>`
+                : pm.jenis === "B3"
+                  ? `<div><b>${pm.balita || 0}</b><span>Balita</span></div><div><b>${pm.bumil || 0}</b><span>Bumil</span></div><div><b>${pm.busui || 0}</b><span>Busui</span></div>`
+                  : `<div><b>${pm.target || 0}</b><span>Penerima</span></div><div><b>${pm.guruTendik || 0}</b><span>Guru/Tendik</span></div>`;
 
-      return `
+            return `
         <article class="pm-card">
           <div class="pm-card-accent ${accent}"></div>
           <div class="pm-card-head">
@@ -4290,9 +6081,10 @@ function renderPMCards() {
           </div>
         </article>
       `;
-    })
-    .join("") : '<div class="md:col-span-2 lg:col-span-3 rounded-xl border border-slate-200 bg-white py-6 text-center text-sm text-slate-500">Tidak ada PM aktif saat ini.</div>'}${inactivePMs.length ? `<div class="md:col-span-2 lg:col-span-3 rounded-xl border border-slate-200 bg-slate-100 p-4"><h3 class="text-xs font-bold text-slate-700">PM Nonaktif (${inactivePMs.length})</h3><div class="mt-2 space-y-2">${inactivePMs.map((pm) => `<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white p-3 text-xs"><div><strong>${escapeHtml(pm.nama || "PM")}</strong><p class="mt-1 text-[10px] text-slate-500">Catatan: ${escapeHtml(pm.catatanNonaktif || "Tidak ada catatan")}${pm.dinonaktifkanPada ? ` Â· ${new Date(pm.dinonaktifkanPada).toLocaleDateString("id-ID", { dateStyle: "medium" })}` : ""}</p></div><button onclick="togglePMStatus('${escapeHtml(pm.id)}')" class="rounded-lg bg-emerald-50 px-3 py-2 text-[10px] font-bold text-emerald-700"><i class="fa-solid fa-rotate-left mr-1"></i>Aktifkan kembali</button></div>`).join("")}</div></div>` : ""}`;
-
+          })
+          .join("")
+      : '<div class="md:col-span-2 lg:col-span-3 rounded-xl border border-slate-200 bg-white py-6 text-center text-sm text-slate-500">Tidak ada PM aktif saat ini.</div>'
+  }${inactivePMs.length ? `<div class="md:col-span-2 lg:col-span-3 rounded-xl border border-slate-200 bg-slate-100 p-4"><h3 class="text-xs font-bold text-slate-700">PM Nonaktif (${inactivePMs.length})</h3><div class="mt-2 space-y-2">${inactivePMs.map((pm) => `<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white p-3 text-xs"><div><strong>${escapeHtml(pm.nama || "PM")}</strong><p class="mt-1 text-[10px] text-slate-500">Catatan: ${escapeHtml(pm.catatanNonaktif || "Tidak ada catatan")}${pm.dinonaktifkanPada ? ` Â· ${new Date(pm.dinonaktifkanPada).toLocaleDateString("id-ID", { dateStyle: "medium" })}` : ""}</p></div><button onclick="togglePMStatus('${escapeHtml(pm.id)}')" class="rounded-lg bg-emerald-50 px-3 py-2 text-[10px] font-bold text-emerald-700"><i class="fa-solid fa-rotate-left mr-1"></i>Aktifkan kembali</button></div>`).join("")}</div></div>` : ""}`;
 }
 
 function getPMTotal(pm) {
@@ -4348,39 +6140,43 @@ function renderPMMap() {
       iconAnchor: [20, 38],
       popupAnchor: [0, -34],
     });
-    window.L.marker([kitchen.latitude, kitchen.longitude], { icon: kitchenIcon })
+    window.L.marker([kitchen.latitude, kitchen.longitude], {
+      icon: kitchenIcon,
+    })
       .bindPopup(
         `<div class="pm-map-popup"><strong>${escapeHtml(kitchen.name)}</strong><span>${escapeHtml(kitchen.address || "Lokasi dapur")}</span></div>`,
       )
       .addTo(window.appState.pmMapMarkers);
     bounds.push([kitchen.latitude, kitchen.longitude]);
   }
-  window.appState.pms.filter((pm) => (pm.status || "Aktif") === "Aktif").forEach((pm) => {
-    const coordinates = getPMCoordinates(pm);
-    if (!coordinates) return;
-    const { latitude, longitude } = coordinates;
-    const markerConfig = {
-      SD: { color: "#0284c7", icon: "fa-school" },
-      TK: { color: "#f59e0b", icon: "fa-school" },
-      SMP: { color: "#8b5cf6", icon: "fa-school" },
-      SMA: { color: "#ef4444", icon: "fa-school" },
-      B3: { color: "#10b981", icon: "fa-house-medical" },
-    };
-    const marker = markerConfig[pm.jenis] || markerConfig.SD;
-    const markerIcon = window.L.divIcon({
-      className: "pm-map-marker",
-      html: `<span class="${pm.jenis === "B3" ? "pm-marker-health" : "pm-marker-school"}" style="--marker-color: ${marker.color}"><i class="fa-solid ${marker.icon}"></i></span>`,
-      iconSize: [36, 44],
-      iconAnchor: [18, 42],
-      popupAnchor: [0, -38],
+  window.appState.pms
+    .filter((pm) => (pm.status || "Aktif") === "Aktif")
+    .forEach((pm) => {
+      const coordinates = getPMCoordinates(pm);
+      if (!coordinates) return;
+      const { latitude, longitude } = coordinates;
+      const markerConfig = {
+        SD: { color: "#0284c7", icon: "fa-school" },
+        TK: { color: "#f59e0b", icon: "fa-school" },
+        SMP: { color: "#8b5cf6", icon: "fa-school" },
+        SMA: { color: "#ef4444", icon: "fa-school" },
+        B3: { color: "#10b981", icon: "fa-house-medical" },
+      };
+      const marker = markerConfig[pm.jenis] || markerConfig.SD;
+      const markerIcon = window.L.divIcon({
+        className: "pm-map-marker",
+        html: `<span class="${pm.jenis === "B3" ? "pm-marker-health" : "pm-marker-school"}" style="--marker-color: ${marker.color}"><i class="fa-solid ${marker.icon}"></i></span>`,
+        iconSize: [36, 44],
+        iconAnchor: [18, 42],
+        popupAnchor: [0, -38],
+      });
+      window.L.marker([latitude, longitude], { icon: markerIcon })
+        .bindPopup(
+          `<div class="pm-map-popup"><strong>${pm.nama || "Penerima Manfaat"}</strong><span>${pm.jenis || "PM"} &middot; ${pm.lokasi || "-"}</span><b>${getPMTotal(pm).toLocaleString("id-ID")} porsi total</b><button onclick="editPM('${pm.id}')">Edit data</button></div>`,
+        )
+        .addTo(window.appState.pmMapMarkers);
+      bounds.push([latitude, longitude]);
     });
-    window.L.marker([latitude, longitude], { icon: markerIcon })
-      .bindPopup(
-        `<div class="pm-map-popup"><strong>${pm.nama || "Penerima Manfaat"}</strong><span>${pm.jenis || "PM"} &middot; ${pm.lokasi || "-"}</span><b>${getPMTotal(pm).toLocaleString("id-ID")} porsi total</b><button onclick="editPM('${pm.id}')">Edit data</button></div>`,
-      )
-      .addTo(window.appState.pmMapMarkers);
-    bounds.push([latitude, longitude]);
-  });
 
   if (bounds.length) {
     window.appState.pmMap.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
@@ -4406,22 +6202,24 @@ function renderPMSummary() {
 
   let porsiBesar = 0;
   let porsiKecil = 0;
-  window.appState.pms.filter((pm) => (pm.status || "Aktif") === "Aktif").forEach((pm) => {
-    if (pm.jenis === "SD") {
-      porsiBesar += Number(pm.kelas46 || 0);
-      porsiKecil += Number(pm.kelas13 || 0);
-      porsiBesar += Number(pm.guruTendik || 0);
-    } else if (pm.jenis === "B3") {
-      porsiBesar += Number(pm.bumil || 0) + Number(pm.busui || 0);
-      porsiKecil += Number(pm.balita || 0);
-    } else if (["SMP", "SMA"].includes(pm.jenis)) {
-      porsiBesar += Number(pm.target || 0);
-      porsiBesar += Number(pm.guruTendik || 0);
-    } else if (pm.jenis === "TK") {
-      porsiKecil += Number(pm.target || 0);
-      porsiBesar += Number(pm.guruTendik || 0);
-    }
-  });
+  window.appState.pms
+    .filter((pm) => (pm.status || "Aktif") === "Aktif")
+    .forEach((pm) => {
+      if (pm.jenis === "SD") {
+        porsiBesar += Number(pm.kelas46 || 0);
+        porsiKecil += Number(pm.kelas13 || 0);
+        porsiBesar += Number(pm.guruTendik || 0);
+      } else if (pm.jenis === "B3") {
+        porsiBesar += Number(pm.bumil || 0) + Number(pm.busui || 0);
+        porsiKecil += Number(pm.balita || 0);
+      } else if (["SMP", "SMA"].includes(pm.jenis)) {
+        porsiBesar += Number(pm.target || 0);
+        porsiBesar += Number(pm.guruTendik || 0);
+      } else if (pm.jenis === "TK") {
+        porsiKecil += Number(pm.target || 0);
+        porsiBesar += Number(pm.guruTendik || 0);
+      }
+    });
   const totalPagu = porsiBesar * 10000 + porsiKecil * 8000;
 
   container.innerHTML = `
@@ -4457,16 +6255,33 @@ window.togglePMStatus = async function (id) {
       showToast("Catatan penonaktifan wajib diisi", "error");
       return;
     }
-    updatedPM = { ...pm, status: "Nonaktif", catatanNonaktif: note.trim(), dinonaktifkanPada: new Date().toISOString() };
+    updatedPM = {
+      ...pm,
+      status: "Nonaktif",
+      catatanNonaktif: note.trim(),
+      dinonaktifkanPada: new Date().toISOString(),
+    };
   } else {
-    updatedPM = { ...pm, status: "Aktif", catatanNonaktif: "", dinonaktifkanPada: "" };
+    updatedPM = {
+      ...pm,
+      status: "Aktif",
+      catatanNonaktif: "",
+      dinonaktifkanPada: "",
+    };
   }
   try {
     await setDoc(doc(db, "pms", String(pm.id)), updatedPM);
-    window.appState.pms = window.appState.pms.map((item) => String(item.id) === String(pm.id) ? updatedPM : item);
+    window.appState.pms = window.appState.pms.map((item) =>
+      String(item.id) === String(pm.id) ? updatedPM : item,
+    );
     renderPMCards();
     updateDashboardMetrics();
-    showToast(isActive ? "PM dinonaktifkan; jumlah porsi dan pagu diperbarui" : "PM diaktifkan kembali", "success");
+    showToast(
+      isActive
+        ? "PM dinonaktifkan; jumlah porsi dan pagu diperbarui"
+        : "PM diaktifkan kembali",
+      "success",
+    );
   } catch (error) {
     showToast(error.message || "Status PM gagal disimpan", "error");
   }
@@ -4495,8 +6310,11 @@ window.editPM = function (id) {
   document.getElementById("inputPMId").value = pm.id;
   document.getElementById("inputJenisPM").value = pm.jenis || "SD";
   document.getElementById("inputStatusPM").value = pm.status || "Aktif";
-  const deactivationNoteField = document.getElementById("inputCatatanNonaktifPM");
-  if (deactivationNoteField) deactivationNoteField.value = pm.catatanNonaktif || "";
+  const deactivationNoteField = document.getElementById(
+    "inputCatatanNonaktifPM",
+  );
+  if (deactivationNoteField)
+    deactivationNoteField.value = pm.catatanNonaktif || "";
   updatePMDeactivationNoteVisibility();
   document.getElementById("inputNamaPM").value = pm.nama || "";
   document.getElementById("inputLokasiPM").value = pm.lokasi || "";
@@ -4569,8 +6387,10 @@ function updatePMTotalInput() {
   const totalField = document.getElementById("inputTotalPenerimaPM");
   const fields = document.getElementById("pmTargetFields");
   if (!totalField || !fields) return;
-  const total = [...fields.querySelectorAll('input[type="number"]')]
-    .reduce((sum, input) => sum + (Number(input.value) || 0), 0);
+  const total = [...fields.querySelectorAll('input[type="number"]')].reduce(
+    (sum, input) => sum + (Number(input.value) || 0),
+    0,
+  );
   totalField.value = String(total);
 }
 
@@ -4630,15 +6450,19 @@ window.savePM = async function (event) {
                 }
               : {}),
           };
-  const existingPM = window.appState.pms.find((item) => String(item.id) === String(id)) || {};
+  const existingPM =
+    window.appState.pms.find((item) => String(item.id) === String(id)) || {};
   const pmStatus = document.getElementById("inputStatusPM").value;
-  const deactivationNote = document.getElementById("inputCatatanNonaktifPM")?.value.trim() || "";
+  const deactivationNote =
+    document.getElementById("inputCatatanNonaktifPM")?.value.trim() || "";
   if (pmStatus === "Nonaktif" && !deactivationNote) {
     showToast("Isi catatan alasan penonaktifan PM", "error");
     return;
   }
   if (pmStatus === "Aktif" && existingPM.status === "Nonaktif") {
-    const confirmed = window.confirm("Aktifkan kembali PM ini? Jumlah porsi dan pagu akan dihitung kembali.");
+    const confirmed = window.confirm(
+      "Aktifkan kembali PM ini? Jumlah porsi dan pagu akan dihitung kembali.",
+    );
     if (!confirmed) return;
   }
   const data = {
@@ -4652,13 +6476,19 @@ window.savePM = async function (event) {
           ? breakdown.balita + breakdown.bumil + breakdown.busui
           : breakdown.target,
     ...breakdown,
-    totalPenerima: Object.values(breakdown).reduce((sum, value) => sum + (Number(value) || 0), 0),
+    totalPenerima: Object.values(breakdown).reduce(
+      (sum, value) => sum + (Number(value) || 0),
+      0,
+    ),
     lokasi: document.getElementById("inputLokasiPM").value.trim(),
     latitude: Number(document.getElementById("inputLatitudePM").value),
     longitude: Number(document.getElementById("inputLongitudePM").value),
     status: pmStatus,
     catatanNonaktif: pmStatus === "Nonaktif" ? deactivationNote : "",
-    dinonaktifkanPada: pmStatus === "Nonaktif" ? (existingPM.dinonaktifkanPada || new Date().toISOString()) : "",
+    dinonaktifkanPada:
+      pmStatus === "Nonaktif"
+        ? existingPM.dinonaktifkanPada || new Date().toISOString()
+        : "",
   };
 
   const submitButton = event.submitter;
@@ -4683,7 +6513,9 @@ window.savePM = async function (event) {
 
 function upsertPMInState(pm) {
   const uniquePMs = new Map();
-  [...window.appState.pms, pm].forEach((item) => uniquePMs.set(String(item.id), item));
+  [...window.appState.pms, pm].forEach((item) =>
+    uniquePMs.set(String(item.id), item),
+  );
   window.appState.pms = [...uniquePMs.values()];
 }
 
@@ -4732,7 +6564,11 @@ function renderDokumenTable() {
     );
 
   if (!window.appState.dokumen.length) {
-    if (!window.appState.driveLoaded && window.appState.user && window.appState.driveAccessToken) {
+    if (
+      !window.appState.driveLoaded &&
+      window.appState.user &&
+      window.appState.driveAccessToken
+    ) {
       tbody.innerHTML = `<tr><td colspan="7" class="py-10 text-center text-sm font-medium text-sky-700"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Memuat file dari Google Drive...</td></tr>`;
       return;
     }
@@ -4821,7 +6657,9 @@ function escapeHtml(value) {
 window.openModalBarang = function () {
   document.getElementById("formBarang").reset();
   document.getElementById("barangId").value = "";
-  document.getElementById("modalBarangTitle").innerText = "Tambah Barang Baru";
+  document.getElementById("modalBarangTitle").innerText = isOperationalPage()
+    ? "Tambah Barang Operasional"
+    : "Tambah Barang Baru";
   document.getElementById("inputTanggalBarang").value = new Date()
     .toISOString()
     .split("T")[0];
@@ -4842,14 +6680,25 @@ window.closeModalBarang = function () {
 };
 
 window.openDetailBarang = function (id) {
-  const item = window.appState.barang.find((b) => String(b.id) === String(id));
+  const item = getCurrentBarangItems().find((b) => String(b.id) === String(id));
   if (!item) return;
   window.appState.selectedBarangId = item.id;
 
   const latestArrival = getLatestArrival(item);
-  const firebasePhoto = item.statusAdmin === "ACC"
-    ? (latestArrival?.photoDataUrl || (latestArrival?.photoId ? window.appState.arrivalPhotoCache?.[latestArrival.photoId] : "") || latestArrival?.photoUrl || item.fotoPenerimaan || item.foto || item.fotoUrl || item.imageUrl || (latestArrival?.photoId ? "" : item.img) || "")
-    : "";
+  const firebasePhoto =
+    item.statusAdmin === "ACC"
+      ? latestArrival?.photoDataUrl ||
+        (latestArrival?.photoId
+          ? window.appState.arrivalPhotoCache?.[latestArrival.photoId]
+          : "") ||
+        latestArrival?.photoUrl ||
+        item.fotoPenerimaan ||
+        item.foto ||
+        item.fotoUrl ||
+        item.imageUrl ||
+        (latestArrival?.photoId ? "" : item.img) ||
+        ""
+      : "";
   document.getElementById("detailFoto").src = firebasePhoto;
   if (!firebasePhoto && latestArrival?.photoId && item.statusAdmin === "ACC") {
     document.getElementById("detailFoto").classList.remove("hidden");
@@ -4857,7 +6706,12 @@ window.openDetailBarang = function (id) {
     getDoc(doc(db, "barang_arrival_photos", String(latestArrival.photoId)))
       .then((photoSnapshot) => {
         const photoData = photoSnapshot.exists() ? photoSnapshot.data() : null;
-        const dataUrl = photoData?.dataUrl || photoData?.base64 || photoData?.foto || photoData?.image || "";
+        const dataUrl =
+          photoData?.dataUrl ||
+          photoData?.base64 ||
+          photoData?.foto ||
+          photoData?.image ||
+          "";
         if (!dataUrl) return;
         window.appState.arrivalPhotoCache ||= {};
         window.appState.arrivalPhotoCache[latestArrival.photoId] = dataUrl;
@@ -4872,17 +6726,17 @@ window.openDetailBarang = function (id) {
   document.getElementById("detailFoto").onerror = () => {
     document.getElementById("detailFoto").classList.add("hidden");
   };
-  document.getElementById("detailFoto").classList.toggle(
-    "hidden",
-    !firebasePhoto,
-  );
+  document
+    .getElementById("detailFoto")
+    .classList.toggle("hidden", !firebasePhoto);
   document.getElementById("detailNama").innerText =
     item.nama || item.name || "-";
   document.getElementById("detailTipeBadge").innerText = item.tipe || "Utama";
   document.getElementById("detailHarga").innerText = formatRupiah(item.harga);
   document.getElementById("detailTanggal").innerText = item.tanggal || "-";
   document.getElementById("detailKebutuhan").innerText = item.kebutuhan || 0;
-  document.getElementById("detailDatang").innerText = getItemReceivedQuantity(item);
+  document.getElementById("detailDatang").innerText =
+    getItemReceivedQuantity(item);
   document.getElementById("detailSatuan").innerText = item.satuan || "-";
   document.getElementById("detailStatusAdmin").innerText =
     item.statusAdmin || "Pending";
@@ -4903,7 +6757,7 @@ window.closeDetailBarang = function () {
 };
 
 window.editBarang = function (id) {
-  const item = window.appState.barang.find((b) => String(b.id) === String(id));
+  const item = getCurrentBarangItems().find((b) => String(b.id) === String(id));
   if (!item) return;
 
   document.getElementById("barangId").value = item.id;
@@ -4917,15 +6771,17 @@ window.editBarang = function (id) {
   document.getElementById("inputSatuanBarang").value = item.satuan || "";
   document.getElementById("inputKebutuhanBarang").value = item.kebutuhan || "";
 
-  document.getElementById("modalBarangTitle").innerText = "Edit Data Barang";
+  document.getElementById("modalBarangTitle").innerText = isOperationalPage()
+    ? "Edit Barang Operasional"
+    : "Edit Data Barang";
   document.getElementById("modalBarang").classList.remove("hidden");
 };
 
 window.saveBarang = async function (e) {
   e.preventDefault();
   const id = document.getElementById("barangId").value || "b_" + Date.now();
-  const existing =
-    window.appState.barang.find((b) => String(b.id) === String(id)) || {};
+  const currentItems = getCurrentBarangItems();
+  const existing = currentItems.find((b) => String(b.id) === String(id)) || {};
 
   const data = {
     id,
@@ -4936,11 +6792,15 @@ window.saveBarang = async function (e) {
       document.getElementById("inputHargaBarang").value.replace(/\D/g, ""),
     ),
     kebutuhan: Number(
-      document.getElementById("inputKebutuhanBarang")?.value || existing.kebutuhan || 0,
+      document.getElementById("inputKebutuhanBarang")?.value ||
+        existing.kebutuhan ||
+        0,
     ),
     satuan: document.getElementById("inputSatuanBarang").value.trim(),
     datang: existing.datang || 0,
-    stockHistory: Array.isArray(existing.stockHistory) ? existing.stockHistory : [],
+    stockHistory: Array.isArray(existing.stockHistory)
+      ? existing.stockHistory
+      : [],
     arrivalHistory: Array.isArray(existing.arrivalHistory)
       ? existing.arrivalHistory
       : [],
@@ -4950,35 +6810,45 @@ window.saveBarang = async function (e) {
   };
 
   try {
-    await setDoc(doc(db, "mbg_items", id), data);
-    showToast("Data barang berhasil disimpan!", "success");
-  } catch (err) {
-    const idx = window.appState.barang.findIndex(
-      (b) => String(b.id) === String(id),
+    await setDoc(doc(db, getCurrentBarangCollection(), id), data);
+    showToast(
+      isOperationalPage()
+        ? "Data barang operasional berhasil disimpan!"
+        : "Data barang berhasil disimpan!",
+      "success",
     );
-    if (idx >= 0) window.appState.barang[idx] = data;
-    else window.appState.barang.unshift(data);
+  } catch (err) {
+    const idx = currentItems.findIndex((b) => String(b.id) === String(id));
+    if (idx >= 0) currentItems[idx] = data;
+    else currentItems.unshift(data);
     renderBarangTable();
-    renderStockTable();
-    showToast("Disimpan secara lokal", "info");
+    if (!isOperationalPage()) renderStockTable();
+    showToast(
+      isOperationalPage()
+        ? "Barang operasional disimpan secara lokal"
+        : "Disimpan secara lokal",
+      "info",
+    );
   }
   closeModalBarang();
 };
 
 window.approveBarang = async function (id, statusField) {
-  const item = window.appState.barang.find(
-    (barang) => String(barang.id) === String(id),
-  );
+  const currentItems = getCurrentBarangItems();
+  const item = currentItems.find((barang) => String(barang.id) === String(id));
   if (!item) return;
 
   const updatedItem = { ...item, [statusField]: "ACC" };
   try {
-    await setDoc(doc(db, "mbg_items", String(id)), updatedItem);
+    await setDoc(
+      doc(db, getCurrentBarangCollection(), String(id)),
+      updatedItem,
+    );
   } catch (err) {
-    const index = window.appState.barang.findIndex(
+    const index = currentItems.findIndex(
       (barang) => String(barang.id) === String(id),
     );
-    if (index >= 0) window.appState.barang[index] = updatedItem;
+    if (index >= 0) currentItems[index] = updatedItem;
     renderBarangTable();
     updateDashboardMetrics();
   }
@@ -5058,7 +6928,9 @@ window.promptDelete = function (type, id, name) {
 };
 
 window.promptStockDelete = function (id) {
-  const item = window.appState.inventoryItems.find((entry) => String(entry.id) === String(id));
+  const item = window.appState.inventoryItems.find(
+    (entry) => String(entry.id) === String(id),
+  );
   if (!item) return;
   window.appState.pendingDelete = {
     type: "inventory_item",
@@ -5089,25 +6961,37 @@ window.executePendingDelete = async function () {
       ? "inventory_items"
       : type === "barang"
         ? "mbg_items"
-      : type === "supplier"
-        ? "suppliers"
-        : type === "pm"
-          ? "pms"
-          : type;
+        : type === "operasional"
+          ? "operational_items"
+          : type === "supplier"
+            ? "suppliers"
+            : type === "pm"
+              ? "pms"
+              : type;
 
   try {
     await deleteDoc(doc(db, colName, String(id)));
     if (type === "inventory_item") {
-      window.appState.inventoryItems = window.appState.inventoryItems.filter((item) => String(item.id) !== String(id));
+      window.appState.inventoryItems = window.appState.inventoryItems.filter(
+        (item) => String(item.id) !== String(id),
+      );
       renderStockTable();
       renderAdminPwaStock();
       renderAdminPwaDashboard();
     } else if (type === "barang") {
-      window.appState.barang = window.appState.barang.filter((item) => String(item.id) !== String(id));
+      window.appState.barang = window.appState.barang.filter(
+        (item) => String(item.id) !== String(id),
+      );
       renderBarangTable();
       renderStockTable();
       renderAdminPwaStock();
       renderAdminPwaDashboard();
+    } else if (type === "operasional") {
+      window.appState.barangOperasional =
+        window.appState.barangOperasional.filter(
+          (item) => String(item.id) !== String(id),
+        );
+      renderBarangTable();
     }
     showToast(`${name} telah dihapus dari database`, "success");
   } catch (err) {
@@ -5122,8 +7006,13 @@ window.executePendingDelete = async function () {
       );
       renderPMCards();
     }
-    if (type === "inventory_item") showToast(err.message || "Barang stok gagal dihapus dari database", "error");
-    else if (type === "barang") showToast(err.message || "Barang gagal dihapus dari database", "error");
+    if (type === "inventory_item")
+      showToast(
+        err.message || "Barang stok gagal dihapus dari database",
+        "error",
+      );
+    else if (type === "barang" || type === "operasional")
+      showToast(err.message || "Barang gagal dihapus dari database", "error");
     else showToast(`${name} dihapus secara lokal`, "info");
   } finally {
     setButtonLoading(confirmButton, false);
@@ -5133,6 +7022,27 @@ window.executePendingDelete = async function () {
 };
 
 window.addEventListener("load", () => {
+  if (isOperationalPage()) {
+    document.title = "Kelola Operasional | MBG System";
+    document.getElementById("pageTitle").textContent =
+      "Kelola Barang Operasional";
+    document.getElementById("pageSubTitle").textContent =
+      "Data kebutuhan barang operasional seperti tali rafia, masker, tisu, dan lainnya";
+    document.querySelector("main section h2").textContent =
+      "Daftar Barang Operasional";
+    document.querySelector("#inputNamaBarang").placeholder =
+      "Contoh: Tali rafia, masker, tisu";
+    document.querySelector(
+      "#inputNamaBarang",
+    ).previousElementSibling.textContent = "Nama Barang Operasional";
+    document.querySelector(
+      'button[onclick="openModalBarang()"] span',
+    ).textContent = "Tambah Barang Operasional";
+    document
+      .querySelector('button[onclick="openRabModal()"]')
+      ?.classList.add("hidden");
+  }
+
   const now = new Date();
   const options = {
     weekday: "long",
@@ -5146,11 +7056,14 @@ window.addEventListener("load", () => {
   }
 
   const adminDateFilter = document.getElementById("adminArrivalFilterDate");
-  if (adminDateFilter && !adminDateFilter.value) adminDateFilter.value = getLocalDateString();
+  if (adminDateFilter && !adminDateFilter.value)
+    adminDateFilter.value = getLocalDateString();
 
   const arrivalPhotoInput = document.getElementById("adminArrivalPhoto");
   const dropZone = document.getElementById("adminArrivalDropZone");
-  const arrivalSubmitButton = document.getElementById("adminArrivalSubmitButton");
+  const arrivalSubmitButton = document.getElementById(
+    "adminArrivalSubmitButton",
+  );
   let arrivalPhotoValidationRequest = 0;
   const applyArrivalPhoto = (photo) => {
     const preview = document.getElementById("adminArrivalPhotoPreview");
@@ -5164,22 +7077,28 @@ window.addEventListener("load", () => {
     }
     if (!photo || !preview) {
       preview?.classList.add("hidden");
-      if (photoName) photoName.textContent = "JPG, PNG, atau WebP Â· Maksimal 20 MB";
-      if (validation) validation.textContent = "Pilih foto JPG, PNG, atau WebP. Foto harus lolos validasi dan kompresi sebelum disimpan.";
+      if (photoName)
+        photoName.textContent = "JPG, PNG, atau WebP Â· Maksimal 20 MB";
+      if (validation)
+        validation.textContent =
+          "Pilih foto JPG, PNG, atau WebP. Foto harus lolos validasi dan kompresi sebelum disimpan.";
       return;
     }
     if (!["image/jpeg", "image/png", "image/webp"].includes(photo.type)) {
       showToast("Pilih file gambar JPG, PNG, atau WebP", "error");
       arrivalPhotoInput.value = "";
       preview.classList.add("hidden");
-      if (validation) validation.textContent = "Format tidak didukung. Gunakan foto JPG, PNG, atau WebP.";
+      if (validation)
+        validation.textContent =
+          "Format tidak didukung. Gunakan foto JPG, PNG, atau WebP.";
       return;
     }
     if (photo.size > 20 * 1024 * 1024) {
       showToast("Ukuran foto asli maksimal 20 MB", "error");
       arrivalPhotoInput.value = "";
       preview.classList.add("hidden");
-      if (validation) validation.textContent = "Foto terlalu besar. Maksimal 20 MB.";
+      if (validation)
+        validation.textContent = "Foto terlalu besar. Maksimal 20 MB.";
       return;
     }
     const transfer = new DataTransfer();
@@ -5189,30 +7108,42 @@ window.addEventListener("load", () => {
     preview.src = adminArrivalPhotoPreviewUrl;
     preview.classList.remove("hidden");
     if (photoName) photoName.textContent = photo.name;
-    if (validation) validation.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Memvalidasi dan mengompres foto...';
-    compressArrivalPhoto(photo).then((compressed) => {
-      if (requestId !== arrivalPhotoValidationRequest) return;
-      if (validation) validation.innerHTML = `<i class="fa-solid fa-circle-check mr-1 text-emerald-600"></i>Foto valid Â· Asli ${formatFileSize(photo.size)} Â· Setelah kompresi ${formatFileSize(compressed.sizeBytes)} Â· ${compressed.width}Ã—${compressed.height}px`;
-      if (arrivalSubmitButton) arrivalSubmitButton.disabled = false;
-    }).catch((error) => {
-      if (requestId !== arrivalPhotoValidationRequest) return;
-      if (validation) validation.innerHTML = `<i class="fa-solid fa-circle-exclamation mr-1 text-rose-600"></i>${escapeHtml(error.message || "Foto gagal divalidasi")}`;
-      if (arrivalSubmitButton) arrivalSubmitButton.disabled = true;
-    });
+    if (validation)
+      validation.innerHTML =
+        '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Memvalidasi dan mengompres foto...';
+    compressArrivalPhoto(photo)
+      .then((compressed) => {
+        if (requestId !== arrivalPhotoValidationRequest) return;
+        if (validation)
+          validation.innerHTML = `<i class="fa-solid fa-circle-check mr-1 text-emerald-600"></i>Foto valid Â· Asli ${formatFileSize(photo.size)} Â· Setelah kompresi ${formatFileSize(compressed.sizeBytes)} Â· ${compressed.width}Ã—${compressed.height}px`;
+        if (arrivalSubmitButton) arrivalSubmitButton.disabled = false;
+      })
+      .catch((error) => {
+        if (requestId !== arrivalPhotoValidationRequest) return;
+        if (validation)
+          validation.innerHTML = `<i class="fa-solid fa-circle-exclamation mr-1 text-rose-600"></i>${escapeHtml(error.message || "Foto gagal divalidasi")}`;
+        if (arrivalSubmitButton) arrivalSubmitButton.disabled = true;
+      });
   };
   arrivalPhotoInput?.addEventListener("change", () => {
     applyArrivalPhoto(arrivalPhotoInput.files?.[0]);
   });
-  ["dragenter", "dragover"].forEach((eventName) => dropZone?.addEventListener(eventName, (event) => {
-    event.preventDefault();
-    dropZone.classList.add("border-sky-500", "bg-sky-50");
-  }));
-  ["dragleave", "drop"].forEach((eventName) => dropZone?.addEventListener(eventName, (event) => {
-    event.preventDefault();
-    dropZone.classList.remove("border-sky-500", "bg-sky-50");
-  }));
+  ["dragenter", "dragover"].forEach((eventName) =>
+    dropZone?.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      dropZone.classList.add("border-sky-500", "bg-sky-50");
+    }),
+  );
+  ["dragleave", "drop"].forEach((eventName) =>
+    dropZone?.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      dropZone.classList.remove("border-sky-500", "bg-sky-50");
+    }),
+  );
   dropZone?.addEventListener("drop", (event) => {
-    const photo = [...(event.dataTransfer?.files || [])].find((file) => file.type.startsWith("image/"));
+    const photo = [...(event.dataTransfer?.files || [])].find((file) =>
+      file.type.startsWith("image/"),
+    );
     if (!photo) {
       showToast("Seret file gambar ke area foto", "error");
       return;
@@ -5222,7 +7153,9 @@ window.addEventListener("load", () => {
   arrivalPhotoInput?.closest("form")?.addEventListener("reset", () => {
     arrivalPhotoValidationRequest++;
     if (arrivalSubmitButton) arrivalSubmitButton.disabled = false;
-    document.getElementById("adminArrivalPhotoValidation")?.classList.remove("text-rose-600", "text-emerald-700");
+    document
+      .getElementById("adminArrivalPhotoValidation")
+      ?.classList.remove("text-rose-600", "text-emerald-700");
   });
 
   setupInstallPrompt();

@@ -1,10 +1,11 @@
-const CACHE_NAME = "mbg-pwa-v49-firestore-kitchen-settings";
+const CACHE_NAME = "mbg-pwa-v50-operational-items";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./admin-penerimaan.html",
   "./admin-pwa.webmanifest",
   "./barang.html",
+  "./barang.html?jenis=operasional",
   "./menu.html",
   "./user.html",
   "./supplier.html",
