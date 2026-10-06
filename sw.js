@@ -1,4 +1,4 @@
-const CACHE_NAME = "mbg-pwa-v51-master-items";
+const CACHE_NAME = "mbg-pwa-v53-incentive-pagination";
 const APP_SHELL = [
   "./",
   "./index.html",

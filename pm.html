@@ -90,8 +90,19 @@
             <i class="fa-solid fa-boxes-stacked w-5 text-center"></i>
             <span>Kelola Barang</span>
           </a>
-          <a href="./stok.html" class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800 hover:text-white"><i class="fa-solid fa-boxes-packing w-5 text-center"></i><span>Stok Barang</span></a>
-          <a href="./menu.html" id="nav-menu" class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800 hover:text-white"><i class="fa-solid fa-utensils w-5 text-center"></i><span>Menu &amp; AKG</span></a>
+          <a
+            href="./stok.html"
+            class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800 hover:text-white"
+            ><i class="fa-solid fa-boxes-packing w-5 text-center"></i
+            ><span>Stok Barang</span></a
+          >
+          <a
+            href="./menu.html"
+            id="nav-menu"
+            class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800 hover:text-white"
+            ><i class="fa-solid fa-utensils w-5 text-center"></i
+            ><span>Menu &amp; AKG</span></a
+          >
           <a
             href="./supplier.html"
             id="nav-supplier"
@@ -116,7 +127,13 @@
             <i class="fa-solid fa-file-contract w-5 text-center"></i>
             <span>Dokumen & LPJ</span>
           </a>
-          <a href="./user.html" id="nav-users" class="nav-item hidden flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800 hover:text-white"><i class="fa-solid fa-users-gear w-5 text-center"></i><span>Pengguna</span></a>
+          <a
+            href="./user.html"
+            id="nav-users"
+            class="nav-item hidden flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 hover:bg-slate-800 hover:text-white"
+            ><i class="fa-solid fa-users-gear w-5 text-center"></i
+            ><span>Pengguna</span></a
+          >
           <a
             href="./setting.html"
             id="nav-setting"
@@ -145,7 +162,14 @@
             >v2.4 Online</span
           >
         </div>
-        <button id="installAppBtn" type="button" class="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20"><i class="fa-solid fa-download"></i><span>Install aplikasi</span></button><p class="text-[11px] text-slate-500">
+        <button
+          id="installAppBtn"
+          type="button"
+          class="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20"
+        >
+          <i class="fa-solid fa-download"></i><span>Install aplikasi</span>
+        </button>
+        <p class="text-[11px] text-slate-500">
           Kementerian / Badan Gizi Nasional
         </p>
       </div>
@@ -241,16 +265,21 @@
                 ></i
                 >Posyandu / B3</span
               ><span
-                ><i class="fa-solid fa-utensils pm-legend-icon pm-legend-kitchen"></i
+                ><i
+                  class="fa-solid fa-utensils pm-legend-icon pm-legend-kitchen"
+                ></i
                 >Dapur</span
               >
             </div>
-            <p id="pmMapNote" class="pm-map-note">Atur koordinat dapur di Pengaturan untuk menampilkan pin dan jarak.</p>
+            <p id="pmMapNote" class="pm-map-note">
+              Atur koordinat dapur di Pengaturan untuk menampilkan pin dan
+              jarak.
+            </p>
           </div>
 
           <div
             id="pmSummaryContainer"
-            class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
+            class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5"
           ></div>
 
           <div
@@ -316,9 +345,21 @@
             </div>
           </div>
           <div id="pmDeactivationNoteWrap" class="hidden">
-            <label for="inputCatatanNonaktifPM" class="mb-1 block font-semibold text-slate-700">Catatan penonaktifan</label>
-            <textarea id="inputCatatanNonaktifPM" rows="2" maxlength="500" placeholder="Alasan PM dinonaktifkan" class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none"></textarea>
-            <p class="mt-1 text-[10px] text-slate-400">Catatan wajib diisi saat status PM Nonaktif.</p>
+            <label
+              for="inputCatatanNonaktifPM"
+              class="mb-1 block font-semibold text-slate-700"
+              >Catatan penonaktifan</label
+            >
+            <textarea
+              id="inputCatatanNonaktifPM"
+              rows="2"
+              maxlength="500"
+              placeholder="Alasan PM dinonaktifkan"
+              class="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 outline-none"
+            ></textarea>
+            <p class="mt-1 text-[10px] text-slate-400">
+              Catatan wajib diisi saat status PM Nonaktif.
+            </p>
           </div>
           <div>
             <label class="block font-semibold text-slate-700 mb-1"
@@ -333,9 +374,22 @@
           </div>
           <div id="pmTargetFields" class="grid grid-cols-2 gap-3"></div>
           <div>
-            <label for="inputTotalPenerimaPM" class="block font-semibold text-slate-700 mb-1">Total Penerima (otomatis)</label>
-            <input id="inputTotalPenerimaPM" type="number" value="0" readonly aria-readonly="true" class="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl bg-slate-100 text-slate-700 font-bold cursor-not-allowed" />
-            <p class="mt-1 text-[10px] text-slate-500">Dihitung dari jumlah siswa, guru/tendik, balita, bumil, dan busui.</p>
+            <label
+              for="inputTotalPenerimaPM"
+              class="block font-semibold text-slate-700 mb-1"
+              >Total Penerima (otomatis)</label
+            >
+            <input
+              id="inputTotalPenerimaPM"
+              type="number"
+              value="0"
+              readonly
+              aria-readonly="true"
+              class="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl bg-slate-100 text-slate-700 font-bold cursor-not-allowed"
+            />
+            <p class="mt-1 text-[10px] text-slate-500">
+              Dihitung dari jumlah siswa, guru/tendik, balita, bumil, dan busui.
+            </p>
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div>

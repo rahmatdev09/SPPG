@@ -43,6 +43,9 @@ window.appState = {
   barangOperasional: [],
   barangOperasionalLoaded: false,
   barangOperasionalError: "",
+  barangPage: 1,
+  barangPageSize: 10,
+  barangFilterKey: "",
   masterBarang: [],
   masterBarangLoaded: false,
   masterBarangError: "",
@@ -89,6 +92,10 @@ window.appState = {
 
 let deferredPrompt = null;
 let adminArrivalPhotoPreviewUrl = null;
+let menuPhotoDataUrl = "";
+let menuPhotoSizeBytes = 0;
+let menuPhotoRemoved = false;
+let menuPhotoRequestVersion = 0;
 let sppProductPhotoLayouts = [];
 let sppInvoicePhotos = [];
 let sppProductPhotoLayout = 1;
@@ -1781,6 +1788,7 @@ function updateDashboardMetrics() {
       "statTotalBarang",
       "statTotalSupplier",
       "statTotalPM",
+      "statInsentifMitra",
       "statTotalDokumen",
       "adminApprovedBadge",
       "superAdminApprovedBadge",
@@ -1806,6 +1814,8 @@ function updateDashboardMetrics() {
     .reduce((total, pm) => total + getPMTotal(pm), 0);
   document.getElementById("statTotalPM").innerText =
     totalPenerimaManfaat.toLocaleString("id-ID");
+  document.getElementById("statInsentifMitra").innerText =
+    `Insentif Mitra: Rp ${(totalPenerimaManfaat * 2000).toLocaleString("id-ID")}`;
   document.getElementById("statTotalDokumen").innerText =
     window.appState.dokumen.length;
 
@@ -2090,6 +2100,7 @@ window.toggleSidebar = function (show) {
 function renderBarangTable() {
   const tbody = document.getElementById("barangTableBody");
   if (!tbody) return;
+  const pagination = document.getElementById("barangPagination");
 
   const currentItems = getCurrentBarangItems();
   const currentItemsLoaded = isOperationalPage()
@@ -2098,10 +2109,12 @@ function renderBarangTable() {
   const deleteType = isOperationalPage() ? "operasional" : "barang";
   if (!currentItemsLoaded) {
     tbody.innerHTML = `<tr><td colspan="8" class="px-5 py-10 text-center"><span class="inline-flex items-center gap-2 rounded-xl bg-sky-50 px-4 py-3 text-xs font-semibold text-sky-700"><i class="fa-solid fa-spinner fa-spin"></i>Memuat data barang dari Firebase...</span></td></tr>`;
+    if (pagination) pagination.innerHTML = "";
     return;
   }
   if (isOperationalPage() && window.appState.barangOperasionalError) {
     tbody.innerHTML = `<tr><td colspan="8" class="px-5 py-8 text-center text-xs font-semibold text-amber-800">${escapeHtml(window.appState.barangOperasionalError)}</td></tr>`;
+    if (pagination) pagination.innerHTML = "";
     return;
   }
 
@@ -2114,6 +2127,11 @@ function renderBarangTable() {
     document.getElementById("filterTanggalMulaiBarang")?.value || "";
   const dateTo =
     document.getElementById("filterTanggalAkhirBarang")?.value || "";
+  const filterKey = `${isOperationalPage() ? "operasional" : "bahan_baku"}|${searchTerm}|${filterTipe}|${dateFrom}|${dateTo}`;
+  if (window.appState.barangFilterKey !== filterKey) {
+    window.appState.barangFilterKey = filterKey;
+    window.appState.barangPage = 1;
+  }
 
   const filtered = currentItems.filter((item) => {
     const name = (item.nama || item.name || "").toLowerCase();
@@ -2127,10 +2145,19 @@ function renderBarangTable() {
 
   if (!filtered.length) {
     tbody.innerHTML = `<tr><td colspan="8" class="text-center py-8 text-slate-400">Tidak ada data barang ditemukan</td></tr>`;
+    if (pagination) pagination.innerHTML = "";
     return;
   }
 
-  tbody.innerHTML = filtered
+  const pageSize = Number(window.appState.barangPageSize) || 10;
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  window.appState.barangPage = Math.min(
+    pageCount,
+    Math.max(1, Number(window.appState.barangPage) || 1),
+  );
+  const pageStart = (window.appState.barangPage - 1) * pageSize;
+  const visibleItems = filtered.slice(pageStart, pageStart + pageSize);
+  tbody.innerHTML = visibleItems
     .map((item) => {
       const latestArrival = getLatestArrival(item);
       const firebasePhoto =
@@ -2190,8 +2217,27 @@ function renderBarangTable() {
       `;
     })
     .join("");
-  loadLatestArrivalPhotos(filtered);
+  if (pagination) {
+    const firstItem = pageStart + 1;
+    const lastItem = Math.min(pageStart + pageSize, filtered.length);
+    pagination.innerHTML = `<div class="text-xs text-slate-500">Menampilkan ${firstItem}-${lastItem} dari ${filtered.length} barang</div><div class="flex items-center gap-2"><label class="flex items-center gap-2 text-xs text-slate-500">Baris<select onchange="changeBarangPageSize(this.value)" class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs"><option value="10" ${pageSize === 10 ? "selected" : ""}>10</option><option value="25" ${pageSize === 25 ? "selected" : ""}>25</option><option value="50" ${pageSize === 50 ? "selected" : ""}>50</option></select></label><button type="button" onclick="changeBarangPage(-1)" ${window.appState.barangPage <= 1 ? "disabled" : ""} aria-label="Halaman sebelumnya" class="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"><i class="fa-solid fa-chevron-left"></i></button><span class="min-w-20 text-center text-xs font-semibold text-slate-600">${window.appState.barangPage} / ${pageCount}</span><button type="button" onclick="changeBarangPage(1)" ${window.appState.barangPage >= pageCount ? "disabled" : ""} aria-label="Halaman berikutnya" class="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"><i class="fa-solid fa-chevron-right"></i></button></div>`;
+  }
+  loadLatestArrivalPhotos(visibleItems);
 }
+
+window.changeBarangPage = function (direction) {
+  window.appState.barangPage = Math.max(
+    1,
+    (Number(window.appState.barangPage) || 1) + Number(direction),
+  );
+  renderBarangTable();
+};
+
+window.changeBarangPageSize = function (size) {
+  window.appState.barangPageSize = Number(size) || 10;
+  window.appState.barangPage = 1;
+  renderBarangTable();
+};
 
 function getLatestArrival(item) {
   const history = Array.isArray(item?.arrivalHistory)
@@ -3202,7 +3248,7 @@ function getSppHeaderSettings() {
 
 function renderSidebarBrandLogo() {
   const settings = getSppHeaderSettings();
-  const logoUrl = settings.foundationLogoDataUrl;
+  const logoUrl = settings.leftLogoDataUrl || settings.foundationLogoDataUrl;
   const brandHeader = document.querySelector(
     "#sidebar > div:first-child > div:first-child",
   );
@@ -3264,7 +3310,8 @@ function renderSidebarBrandLogo() {
 }
 
 function renderConfiguredAppIcons() {
-  const logoUrl = getSppHeaderSettings().foundationLogoDataUrl;
+  const settings = getSppHeaderSettings();
+  const logoUrl = settings.leftLogoDataUrl || settings.foundationLogoDataUrl;
   const hasCustomLogo =
     typeof logoUrl === "string" && logoUrl.startsWith("data:image/");
   const iconUrl = hasCustomLogo ? logoUrl : "./assets/icon-192.svg";
@@ -4141,11 +4188,20 @@ function showSppPreview(data, isSample = false) {
   const kitchen = safe(settings.kitchenName || "Nama SPPG / Dapur");
   const address = safe(settings.kitchenAddress || "Alamat SPPG");
   const phone = safe(settings.kitchenPhone || "");
-  const logoUrl =
-    typeof settings.foundationLogoDataUrl === "string" &&
-    settings.foundationLogoDataUrl.startsWith("data:image/")
-      ? settings.foundationLogoDataUrl
+  const leftLogoUrl =
+    typeof (settings.leftLogoDataUrl || settings.foundationLogoDataUrl) ===
+      "string" &&
+    (settings.leftLogoDataUrl || settings.foundationLogoDataUrl).startsWith(
+      "data:image/",
+    )
+      ? settings.leftLogoDataUrl || settings.foundationLogoDataUrl
       : "";
+  const rightLogoUrl =
+    typeof settings.rightLogoDataUrl === "string" &&
+    settings.rightLogoDataUrl.startsWith("data:image/")
+      ? settings.rightLogoDataUrl
+      : "";
+  const logoUrl = leftLogoUrl;
   const total = data.suppliers.reduce(
     (sum, supplier) => sum + Number(supplier.amount || 0),
     0,
@@ -4194,8 +4250,14 @@ function showSppPreview(data, isSample = false) {
       `Jenis barang : ${itemCategoryLabel}<br>Perihal : ${safe(data.category)}`,
     )
     .replace(
+      '<div class="koptext">',
+      `${rightLogoUrl ? `<img class="logo logo-right" src="${safe(rightLogoUrl)}" alt="Logo kanan">` : ""}<div class="koptext">`,
+    )
+    .replace('alt="Logo"', 'alt="Logo kiri"')
+    .replace(
       "</head>",
       `<style>
+    .logo-right{order:3}
     .summary-title,.summary-subtitle,.summary-date{width:100%;margin-left:0;margin-right:0}
     .attachment-sheet{height:auto;min-height:0;padding:0;overflow:visible;display:block;break-inside:avoid;page-break-inside:avoid}
     .attachment-sheet h3{margin:0 0 2mm;font-size:8px;line-height:1}
@@ -4439,7 +4501,15 @@ window.generateSppLetter = function (event) {
     headName: String(savedSettings.sppHeadName || "").trim(),
     header: {
       foundationName: savedSettings.foundationName || "",
-      foundationLogoDataUrl: savedSettings.foundationLogoDataUrl || "",
+      foundationLogoDataUrl:
+        savedSettings.leftLogoDataUrl ||
+        savedSettings.foundationLogoDataUrl ||
+        "",
+      leftLogoDataUrl:
+        savedSettings.leftLogoDataUrl ||
+        savedSettings.foundationLogoDataUrl ||
+        "",
+      rightLogoDataUrl: savedSettings.rightLogoDataUrl || "",
       kitchenName: savedSettings.kitchenName || "",
       kitchenAddress: savedSettings.kitchenAddress || "",
       kitchenPhone: savedSettings.kitchenPhone || "",
@@ -5484,6 +5554,11 @@ window.downloadRab = function (event) {
   reportWindow.document.open();
   reportWindow.document.write(reportHtml);
   reportWindow.document.close();
+  const grandTotalRow = [
+    ...reportWindow.document.querySelectorAll(".summary tr"),
+  ].find((row) => row.cells[0]?.textContent.trim() === "Grand Total RAB");
+  if (grandTotalRow?.cells[1])
+    grandTotalRow.cells[1].textContent = formatMoney(totalPagu - totalBarang);
   const reportHeader = reportWindow.document.querySelector(".header");
   const foundationHeader = reportHeader?.querySelector("strong");
   if (foundationHeader) {
@@ -5492,16 +5567,30 @@ window.downloadRab = function (event) {
   }
   if (
     reportHeader &&
-    kitchenProfile.foundationLogoDataUrl &&
+    (kitchenProfile.leftLogoDataUrl || kitchenProfile.foundationLogoDataUrl) &&
     /^data:image\/(?:webp|png|jpeg);base64,/i.test(
-      kitchenProfile.foundationLogoDataUrl,
+      kitchenProfile.leftLogoDataUrl || kitchenProfile.foundationLogoDataUrl,
     )
   ) {
     const logo = reportWindow.document.createElement("img");
     logo.className = "header-logo";
-    logo.src = kitchenProfile.foundationLogoDataUrl;
-    logo.alt = "Logo yayasan atau SPPG";
+    logo.src =
+      kitchenProfile.leftLogoDataUrl || kitchenProfile.foundationLogoDataUrl;
+    logo.alt = "Logo kiri";
     reportHeader.insertBefore(logo, reportHeader.firstChild);
+  }
+  if (
+    reportHeader &&
+    kitchenProfile.rightLogoDataUrl &&
+    /^data:image\/(?:webp|png|jpeg);base64,/i.test(
+      kitchenProfile.rightLogoDataUrl,
+    )
+  ) {
+    const logo = reportWindow.document.createElement("img");
+    logo.className = "header-logo header-logo-right";
+    logo.src = kitchenProfile.rightLogoDataUrl;
+    logo.alt = "Logo kanan";
+    reportHeader.appendChild(logo);
   }
   if (reportHeader && kitchenProfile.kitchenAddress) {
     const address = reportWindow.document.createElement("div");
@@ -5518,7 +5607,7 @@ window.downloadRab = function (event) {
   const reportStyle = reportWindow.document.querySelector("style");
   if (reportStyle)
     reportStyle.textContent +=
-      ".header{position:relative;padding:4px 86px 8px;min-height:76px}.header-logo{position:absolute;left:4px;top:2px;width:72px;height:72px;object-fit:contain}.header-detail{font-size:10px;line-height:1.3;margin-top:2px}";
+      ".header{position:relative;padding:4px 86px 8px;min-height:76px}.header-logo{position:absolute;left:4px;top:2px;width:72px;height:72px;object-fit:contain}.header-logo-right{left:auto;right:4px}.header-detail{font-size:10px;line-height:1.3;margin-top:2px}";
   closeRabModal();
 };
 
@@ -5566,13 +5655,71 @@ function renderSupplierTable() {
     .join("");
 }
 
+function updateMenuPhotoPreview(dataUrl = "", sizeBytes = 0, removed = false) {
+  menuPhotoDataUrl = dataUrl;
+  menuPhotoSizeBytes = Number(sizeBytes) || 0;
+  menuPhotoRemoved = removed;
+  const preview = document.getElementById("menuPhotoPreview");
+  const removeButton = document.getElementById("menuPhotoRemove");
+  const status = document.getElementById("menuPhotoStatus");
+  if (preview) {
+    preview.src = dataUrl;
+    preview.classList.toggle("hidden", !dataUrl);
+  }
+  removeButton?.classList.toggle("hidden", !dataUrl);
+  if (status)
+    status.textContent = dataUrl
+      ? `Foto siap disimpan (${Math.max(1, Math.ceil(menuPhotoSizeBytes / 1024))} KB).`
+      : removed
+        ? "Foto menu akan dihapus saat disimpan."
+        : "JPG, PNG, atau WebP. Foto akan dikompres otomatis.";
+}
+
+window.handleMenuPhotoChange = async function (input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+    input.value = "";
+    showToast("Pilih foto menu dalam format JPG, PNG, atau WebP", "error");
+    return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    input.value = "";
+    showToast("Ukuran foto asli maksimal 20 MB", "error");
+    return;
+  }
+  const requestVersion = ++menuPhotoRequestVersion;
+  const status = document.getElementById("menuPhotoStatus");
+  if (status)
+    status.innerHTML =
+      '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Mengompres foto menu...';
+  try {
+    const compressed = await compressArrivalPhoto(file);
+    if (requestVersion !== menuPhotoRequestVersion) return;
+    updateMenuPhotoPreview(compressed.dataUrl, compressed.sizeBytes);
+  } catch (error) {
+    if (requestVersion !== menuPhotoRequestVersion) return;
+    input.value = "";
+    if (status)
+      status.textContent = error.message || "Foto menu gagal diproses.";
+    showToast(error.message || "Foto menu gagal diproses", "error");
+  }
+};
+
+window.removeMenuPhoto = function () {
+  menuPhotoRequestVersion += 1;
+  const input = document.getElementById("menuFoto");
+  if (input) input.value = "";
+  updateMenuPhotoPreview("", 0, true);
+};
+
 function renderMenuTable() {
   const tbody = document.getElementById("menuTableBody");
   const search = document.getElementById("menuSearch");
   if (!tbody) return;
 
   if (!window.appState.menusLoaded) {
-    tbody.innerHTML = `<tr><td colspan="8" class="px-5 py-10 text-center text-sky-700"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Memuat data menu dari Firebase...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="px-5 py-10 text-center text-sky-700"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Memuat data menu dari Firebase...</td></tr>`;
     return;
   }
 
@@ -5588,7 +5735,7 @@ function renderMenuTable() {
     );
 
   if (!menus.length) {
-    tbody.innerHTML = `<tr><td colspan="8" class="px-5 py-10 text-center text-slate-400">${query ? "Menu tidak ditemukan" : "Belum ada menu. Tambahkan menu pertama."}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="px-5 py-10 text-center text-slate-400">${query ? "Menu tidak ditemukan" : "Belum ada menu. Tambahkan menu pertama."}</td></tr>`;
     renderMenuPagination(0);
     return;
   }
@@ -5606,12 +5753,13 @@ function renderMenuTable() {
       (menu) => `
     <tr class="hover:bg-slate-50/80 transition-colors">
       <td class="px-5 py-4 whitespace-nowrap font-medium text-slate-600">${escapeHtml(formatDateID(menu.tanggal || ""))}</td>
-      <td class="px-5 py-4 font-bold text-slate-800">${escapeHtml(menu.namaMenu || "-")}</td>
+      <td class="px-5 py-4"><div class="flex min-w-48 items-center gap-3"><div class="flex h-12 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">${menu.fotoMenu ? `<img src="${escapeHtml(menu.fotoMenu)}" alt="Foto ${escapeHtml(menu.namaMenu || "menu")}" loading="lazy" class="h-full w-full object-cover"/>` : '<i class="fa-solid fa-utensils text-slate-300"></i>'}</div><p class="min-w-0 font-bold text-slate-800">${escapeHtml(menu.namaMenu || "-")}</p></div></td>
       <td class="px-4 py-4 text-slate-600">${escapeHtml(menu.energi || "-")}</td>
       <td class="px-4 py-4 text-slate-600">${escapeHtml(menu.protein || "-")}</td>
       <td class="px-4 py-4 text-slate-600">${escapeHtml(menu.lemak || "-")}</td>
       <td class="px-4 py-4 text-slate-600">${escapeHtml(menu.karbohidrat || "-")}</td>
       <td class="px-4 py-4 text-slate-600">${escapeHtml(menu.serat || "-")}</td>
+      <td class="px-4 py-4 whitespace-nowrap text-slate-600">${menu.suhu === null || menu.suhu === undefined || menu.suhu === "" ? "-" : `${escapeHtml(menu.suhu)} °C`}</td>
       <td class="px-5 py-4 text-right whitespace-nowrap">
         <button type="button" onclick="editMenu('${escapeHtml(menu.id)}')" class="p-2 text-sky-600 hover:bg-sky-50 rounded-lg" title="Edit menu"><i class="fa-solid fa-pen-to-square"></i></button>
         <button type="button" onclick="deleteMenu('${escapeHtml(menu.id)}')" class="p-2 text-red-600 hover:bg-red-50 rounded-lg" title="Hapus menu"><i class="fa-solid fa-trash-can"></i></button>
@@ -5662,6 +5810,9 @@ window.openMenuModal = function (menuId = "") {
   const form = document.getElementById("formMenu");
   if (!form) return;
   form.reset();
+  menuPhotoRequestVersion += 1;
+  document.getElementById("menuFoto").value = "";
+  updateMenuPhotoPreview();
   document.getElementById("menuId").value = "";
   document.getElementById("menuTanggal").value = getLocalDateString();
   document.getElementById("menuModalTitle").textContent = "Tambah Menu";
@@ -5672,6 +5823,9 @@ window.openMenuModal = function (menuId = "") {
     document.getElementById("menuTanggal").value =
       menu.tanggal || getLocalDateString();
     document.getElementById("menuNama").value = menu.namaMenu || "";
+    document.getElementById("menuSuhu").value =
+      menu.suhu === null || menu.suhu === undefined ? "" : menu.suhu;
+    updateMenuPhotoPreview(menu.fotoMenu || "", menu.fotoMenuSizeBytes || 0);
     for (const field of [
       "energi",
       "protein",
@@ -5691,6 +5845,10 @@ window.openMenuModal = function (menuId = "") {
 
 window.closeMenuModal = function () {
   document.getElementById("modalMenu")?.classList.add("hidden");
+  menuPhotoRequestVersion += 1;
+  const photoInput = document.getElementById("menuFoto");
+  if (photoInput) photoInput.value = "";
+  updateMenuPhotoPreview();
 };
 
 window.editMenu = function (menuId) {
@@ -5702,6 +5860,7 @@ window.saveMenu = async function (event) {
   const button = document.getElementById("saveMenuBtn");
   const id = document.getElementById("menuId").value || `menu_${Date.now()}`;
   const previous = window.appState.menus.find((menu) => menu.id === id);
+  const temperatureValue = document.getElementById("menuSuhu").value.trim();
   const numericAkgFields = [
     "menuEnergi",
     "menuProtein",
@@ -5712,6 +5871,13 @@ window.saveMenu = async function (event) {
   const menu = {
     tanggal: document.getElementById("menuTanggal").value,
     namaMenu: document.getElementById("menuNama").value.trim(),
+    suhu: temperatureValue === "" ? null : Number(temperatureValue),
+    fotoMenu: menuPhotoRemoved
+      ? ""
+      : menuPhotoDataUrl || previous?.fotoMenu || "",
+    fotoMenuSizeBytes: menuPhotoRemoved
+      ? 0
+      : menuPhotoSizeBytes || previous?.fotoMenuSizeBytes || 0,
     energi: Number(document.getElementById("menuEnergi").value),
     protein: Number(document.getElementById("menuProtein").value),
     lemak: Number(document.getElementById("menuLemak").value),
@@ -5740,6 +5906,13 @@ window.saveMenu = async function (event) {
       "Tanggal, nama menu, dan semua komponen AKG wajib diisi",
       "error",
     );
+    return;
+  }
+  if (
+    temperatureValue !== "" &&
+    (!Number.isFinite(menu.suhu) || menu.suhu < 0 || menu.suhu > 100)
+  ) {
+    showToast("Suhu menu harus berada di antara 0–100 °C", "error");
     return;
   }
   setButtonLoading(button, true, "Menyimpan...");
@@ -6208,6 +6381,7 @@ function renderPMCards() {
                 B3: "bg-emerald-500",
               }[pm.jenis] || "bg-sky-500";
             const cardTotal = getPMTotal(pm);
+            const mitraIncentive = cardTotal * 2000;
             const pmCoordinates = getPMCoordinates(pm);
             const routeMetric = routeMetrics?.byId?.[String(pm.id)];
             const routeIsLoading = Boolean(
@@ -6252,6 +6426,7 @@ function renderPMCards() {
             <div class="pm-total"><b>${cardTotal.toLocaleString("id-ID")}</b><span>Total Porsi</span></div>
           </div>
           <div class="pm-card-stats">${stats}</div>
+          <div class="pm-card-incentive"><div><span>Insentif Mitra</span><small>${cardTotal.toLocaleString("id-ID")} penerima × Rp2.000</small></div><b>Rp ${mitraIncentive.toLocaleString("id-ID")}</b></div>
           <p class="pm-card-breakdown">${breakdown}</p>
           <div class="pm-card-coordinates"><i class="fa-solid fa-location-crosshairs"></i>${pm.latitude ?? "-"}, ${pm.longitude ?? "-"}</div>
           <div class="pm-card-travel"><div class="pm-travel-icon"><i class="fa-solid fa-route"></i></div><div class="pm-travel-content"><span class="pm-travel-label">Rute perjalanan</span><p class="pm-travel-info">${travelInfo}</p>${directionUrl ? `<a class="pm-direction-button" href="${directionUrl}" target="_blank" rel="noopener"><i class="fa-solid fa-diamond-turn-right"></i><span>Buka petunjuk arah</span><i class="fa-solid fa-arrow-up-right-from-square pm-direction-external"></i></a>` : ""}</div></div>
@@ -6375,7 +6550,7 @@ function renderPMSummary() {
     container.innerHTML = `
       <div class="pm-summary-loading" role="status" aria-live="polite">
         <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
-        <span>Memuat ringkasan porsi dan total pagu...</span>
+        <span>Memuat porsi, pagu, dan insentif mitra...</span>
       </div>
     `;
     return;
@@ -6402,6 +6577,10 @@ function renderPMSummary() {
       }
     });
   const totalPagu = porsiBesar * 10000 + porsiKecil * 8000;
+  const totalPenerima = window.appState.pms
+    .filter((pm) => (pm.status || "Aktif") === "Aktif")
+    .reduce((total, pm) => total + getPMTotal(pm), 0);
+  const totalInsentifMitra = totalPenerima * 2000;
 
   container.innerHTML = `
     <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
@@ -6418,6 +6597,11 @@ function renderPMSummary() {
       <p class="text-xs font-bold uppercase tracking-wider text-slate-400">Total Pagu</p>
       <p class="text-2xl font-extrabold text-amber-600 mt-2">Rp ${totalPagu.toLocaleString("id-ID")}</p>
       <p class="text-[11px] text-slate-500 mt-1">Besar Rp10.000/porsi Â· Kecil Rp8.000/porsi</p>
+    </div>
+    <div class="bg-white p-5 rounded-2xl border border-emerald-200 shadow-sm">
+      <p class="text-xs font-bold uppercase tracking-wider text-slate-400">Total Insentif Mitra</p>
+      <p class="text-2xl font-extrabold text-emerald-700 mt-2">Rp ${totalInsentifMitra.toLocaleString("id-ID")}</p>
+      <p class="text-[11px] text-slate-500 mt-1">${totalPenerima.toLocaleString("id-ID")} penerima aktif × Rp2.000</p>
     </div>
   `;
 }

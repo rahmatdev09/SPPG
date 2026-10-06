@@ -23,7 +23,7 @@ Proyek ini tidak menggunakan proses build atau package manager. Jalankan berkas 
 | `master-barang.html`            | Kelola katalog pilihan barang bahan baku dan operasional                            |
 | `stok.html`                     | Kelola stok, batas minimum, peringatan restok, riwayat transaksi, serta stok opname |
 | `supplier.html`                 | Data supplier dan rekening                                                          |
-| `pm.html`                       | Data penerima manfaat, porsi, pagu, lokasi, dan rute                                |
+| `pm.html`                       | Data penerima manfaat, porsi, pagu, insentif mitra, lokasi, dan rute                |
 | `menu.html`                     | Data menu dan informasi AKG                                                         |
 | `dokumen.html`                  | Dokumen yang tersimpan di Google Drive                                              |
 | `surat.html`                    | Buat, simpan, buka kembali, dan hapus surat permintaan pembayaran                   |
@@ -74,6 +74,8 @@ Halaman Dokumen meminta izin Google Drive melalui login Google. Aktifkan **Googl
 - Surat permintaan pembayaran disimpan di koleksi Firestore `payment_letters`. Surat tersimpan mencakup rincian barang, supplier, penandatangan, salinan kop, dan lampiran yang dikompres. Total ukuran lampiran dibatasi agar dokumen tidak melewati batas Firestore.
 - Master Barang disimpan di `master_items`. Setiap master memiliki `kategori` (`bahan_baku` atau `operasional`), `nama`, dan `satuan`. Tambahkan barang melalui halaman Master Barang terlebih dahulu; form Kelola Barang kemudian hanya menampilkan master sesuai kategorinya dan mengisi nama serta satuan secara otomatis. Tabel Master Barang mendukung pencarian, filter kategori, dan pagination 10, 25, atau 50 baris.
 - Barang harian memakai koleksi terpisah: `mbg_items` untuk bahan baku dan `operational_items` untuk barang operasional. Barang baru menyimpan referensi `masterItemId` dan kategori; barang lama yang belum tertaut tetap dapat diedit dan dipautkan ke master yang cocok. Mode operasional dibuka melalui `barang.html?jenis=operasional`.
+- Kelola Barang dan Kelola Operasional memakai pagination 10, 25, atau 50 baris; pencarian dan filter mengembalikan daftar ke halaman pertama.
+- Insentif Mitra dihitung dari jumlah penerima PM aktif dikali Rp2.000. Nilai per mitra dan totalnya tampil di halaman Penerima Manfaat; total agregat juga tampil pada Dashboard.
 - Admin Penerimaan menyediakan pilihan Bahan Baku atau Operasional. Daftar pending dan transaksi penerimaan mengikuti koleksi yang dipilih. Surat Permintaan Pembayaran juga memiliki pilihan kategori dan membatasi pilihan barang, tambah-semua, serta foto penerimaan ke kategori tersebut.
 - `inventory_items` menyimpan saldo serta riwayat persediaan. Saat pembaruan pertama, saldo lama yang memiliki stok atau riwayat disalin satu kali ke katalog persediaan dan barang dengan nama serta satuan yang sama digabung. Penerimaan PWA berikutnya mencatat transaksi ke persediaan.
 - Setiap barang stok dapat memiliki `minimumStock`. Peringatan muncul di Stok Barang dan dashboard PWA saat saldo sama dengan atau di bawah nilai tersebut; nilai `0` menonaktifkan peringatan.
